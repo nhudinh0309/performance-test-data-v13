@@ -45,20 +45,29 @@ It is designed to simulate **enterprise-scale datasets** for **performance and l
 
 ```
 DummyDataSeeder/
-├── SeederConfiguration.cs    → Configuration model for SeederConfig.json
-├── LanguageSeeder.cs         → Seeds languages
-├── DictionarySeeder.cs       → Seeds dictionary items with translations
-├── UserSeeder.cs             → Seeds test users
-├── DataTypeSeeder.cs         → Seeds data types
-├── DocumentTypeSeeder.cs     → Seeds Element Types, Document Types, and Templates
-├── MediaSeeder.cs            → Seeds media (PDF, PNG, JPG, Videos)
-└── ContentSeeder.cs          → Seeds content with variant support
+├── README.md                 → Module documentation
+├── SeederConfig.json         → Configuration file (copy to project root)
+├── SeederConfiguration.cs    → Configuration model
+├── Seeders/                  → Seeder classes
+│   ├── LanguageSeeder.cs
+│   ├── DictionarySeeder.cs
+│   ├── UserSeeder.cs
+│   ├── DataTypeSeeder.cs
+│   ├── DocumentTypeSeeder.cs
+│   ├── MediaSeeder.cs
+│   └── ContentSeeder.cs
+└── docs/                     → Detailed documentation
+    ├── SEEDERS.md
+    ├── CONFIGURATION.md
+    └── TEMPLATES.md
 
 Views/                        → Generated templates for Document Types
 SeederConfig.json             → Configuration file for seeder targets
 Program.cs                    → Registers seeders as hosted services
 appsettings.json              → Database and Umbraco configuration
 ```
+
+> **Note:** The `DummyDataSeeder` module is designed to be **reusable** - see [DummyDataSeeder/README.md](DummyDataSeeder/README.md) for installation instructions in other projects.
 
 ---
 
