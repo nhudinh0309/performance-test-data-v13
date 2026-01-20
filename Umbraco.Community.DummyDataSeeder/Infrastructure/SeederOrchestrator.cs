@@ -1,22 +1,24 @@
 namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
 
 using System.Diagnostics;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Umbraco.Cms.Core.Events;
+using Umbraco.Cms.Core.Notifications;
 using Umbraco.Community.DummyDataSeeder.Configuration;
 
 /// <summary>
-/// Hosted service that orchestrates the execution of all seeders in the correct order.
-/// Registered as an IHostedService to run during application startup.
+/// Notification handler that orchestrates the execution of all seeders in the correct order.
+/// Triggered when Umbraco application has fully started.
 /// </summary>
-public class SeederOrchestrator : IHostedService
+public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationStartedNotification>
 {
     private readonly IEnumerable<ISeeder> _seeders;
     private readonly ILogger<SeederOrchestrator> _logger;
     private readonly SeederOptions _options;
     private readonly SeederConfigurationValidator _validator;
     private readonly SeederConfiguration _config;
+    private readonly SeederStatusService _statusService;
 
     /// <summary>
     /// Creates a new SeederOrchestrator instance.
@@ -26,7 +28,8 @@ public class SeederOrchestrator : IHostedService
         ILogger<SeederOrchestrator> logger,
         IOptions<SeederOptions> options,
         IOptions<SeederConfiguration> config,
-        SeederConfigurationValidator validator)
+        SeederConfigurationValidator validator,
+        SeederStatusService statusService)
     {
         // Sort seeders by execution order
         _seeders = seeders.OrderBy(s => s.ExecutionOrder).ToList();
@@ -34,18 +37,28 @@ public class SeederOrchestrator : IHostedService
         _options = options.Value;
         _config = config.Value;
         _validator = validator;
+        _statusService = statusService;
     }
 
-    /// <inheritdoc />
-    public async Task StartAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Handles the UmbracoApplicationStartedNotification to execute seeders.
+    /// </summary>
+    public async Task HandleAsync(UmbracoApplicationStartedNotification notification, CancellationToken cancellationToken)
     {
         if (!_options.Enabled)
         {
             _logger.LogInformation("DummyDataSeeder: Disabled in configuration, skipping all seeders");
+            _statusService.SetSkipped();
             return;
         }
 
-        // Validate configuration
+        // Log preset being used
+        if (_options.Preset != SeederPreset.Custom)
+        {
+            _logger.LogInformation("DummyDataSeeder: Using preset '{Preset}'", _options.Preset);
+        }
+
+        // Validate configuration (preset has already been applied via SeederConfigurationSetup)
         var validationResult = _validator.Validate(_config);
         if (!validationResult.IsValid)
         {
@@ -70,48 +83,59 @@ public class SeederOrchestrator : IHostedService
             seederList.Count,
             _options.FakerSeed?.ToString() ?? "auto");
 
+        _statusService.SetStarted();
         var totalStopwatch = Stopwatch.StartNew();
         var executedCount = 0;
         var failedCount = 0;
 
-        foreach (var seeder in seederList)
+        try
         {
-            if (cancellationToken.IsCancellationRequested)
+            foreach (var seeder in seederList)
             {
-                _logger.LogWarning("DummyDataSeeder: Orchestration cancelled");
-                break;
-            }
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning("DummyDataSeeder: Orchestration cancelled");
+                    break;
+                }
 
-            try
-            {
-                await seeder.ExecuteAsync(cancellationToken);
-                executedCount++;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                failedCount++;
-                _logger.LogError(ex, "DummyDataSeeder: Seeder {SeederName} failed", seeder.SeederName);
+                _statusService.SetCurrentSeeder(seeder.SeederName);
 
-                if (_options.StopOnError)
+                try
+                {
+                    await seeder.ExecuteAsync(cancellationToken);
+                    executedCount++;
+                }
+                catch (OperationCanceledException)
                 {
                     throw;
                 }
+                catch (Exception ex)
+                {
+                    failedCount++;
+                    _logger.LogError(ex, "DummyDataSeeder: Seeder {SeederName} failed", seeder.SeederName);
+
+                    if (_options.StopOnError)
+                    {
+                        _statusService.SetFailed($"Seeder {seeder.SeederName} failed: {ex.Message}");
+                        throw;
+                    }
+                }
             }
+
+            totalStopwatch.Stop();
+            _statusService.SetCompleted(executedCount, failedCount, totalStopwatch.ElapsedMilliseconds);
+
+            _logger.LogInformation(
+                "DummyDataSeeder: Orchestration complete - {Executed} seeders executed, {Failed} failed, total time: {ElapsedMs}ms",
+                executedCount,
+                failedCount,
+                totalStopwatch.ElapsedMilliseconds);
         }
-
-        totalStopwatch.Stop();
-
-        _logger.LogInformation(
-            "DummyDataSeeder: Orchestration complete - {Executed} seeders executed, {Failed} failed, total time: {ElapsedMs}ms",
-            executedCount,
-            failedCount,
-            totalStopwatch.ElapsedMilliseconds);
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            totalStopwatch.Stop();
+            _statusService.SetFailed(ex.Message);
+            throw;
+        }
     }
-
-    /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

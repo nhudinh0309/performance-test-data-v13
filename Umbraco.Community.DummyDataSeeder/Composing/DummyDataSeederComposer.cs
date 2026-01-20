@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
+using Umbraco.Cms.Core.Notifications;
 using Umbraco.Community.DummyDataSeeder.Configuration;
 using Umbraco.Community.DummyDataSeeder.Infrastructure;
 using Umbraco.Community.DummyDataSeeder.Seeders;
@@ -18,11 +19,15 @@ public class DummyDataSeederComposer : IComposer
     public void Compose(IUmbracoBuilder builder)
     {
         // Bind configuration from appsettings.json
+        // Options must be bound first as SeederConfigurationSetup depends on it
+        builder.Services.Configure<SeederOptions>(
+            builder.Config.GetSection(SeederOptions.SectionName));
+
         builder.Services.Configure<SeederConfiguration>(
             builder.Config.GetSection(SeederConfiguration.SectionName));
 
-        builder.Services.Configure<SeederOptions>(
-            builder.Config.GetSection(SeederOptions.SectionName));
+        // Register post-configuration to apply presets
+        builder.Services.ConfigureOptions<SeederConfigurationSetup>();
 
         // Register shared execution context as singleton
         // This provides shared Faker, Random, and caches across all seeders
@@ -31,6 +36,9 @@ public class DummyDataSeederComposer : IComposer
             var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SeederOptions>>().Value;
             return new SeederExecutionContext(options.FakerSeed);
         });
+
+        // Register status service for health check endpoint
+        builder.Services.AddSingleton<SeederStatusService>();
 
         // Register configuration validator
         builder.Services.AddSingleton<SeederConfigurationValidator>();
@@ -45,8 +53,8 @@ public class DummyDataSeederComposer : IComposer
         builder.Services.AddTransient<ISeeder, ContentSeeder>();
         builder.Services.AddTransient<ISeeder, UserSeeder>();
 
-        // Register orchestrator as hosted service
-        // This runs all seeders in order during application startup
-        builder.Services.AddHostedService<SeederOrchestrator>();
+        // Register orchestrator as notification handler
+        // This runs all seeders after Umbraco has fully started
+        builder.AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, SeederOrchestrator>();
     }
 }

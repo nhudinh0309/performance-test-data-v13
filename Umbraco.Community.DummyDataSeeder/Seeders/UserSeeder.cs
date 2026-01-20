@@ -2,7 +2,6 @@ namespace Umbraco.Community.DummyDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Extensions;
 using Umbraco.Community.DummyDataSeeder.Configuration;

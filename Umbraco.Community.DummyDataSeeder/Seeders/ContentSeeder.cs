@@ -8,7 +8,6 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Cms.Core.Strings;
 using Umbraco.Community.DummyDataSeeder.Configuration;
 using Umbraco.Community.DummyDataSeeder.Infrastructure;
 
@@ -23,7 +22,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly IDataTypeService _dataTypeService;
     private readonly ILocalizationService _localizationService;
     private readonly IDomainService _domainService;
-    private readonly IShortStringHelper _shortStringHelper;
 
     /// <summary>
     /// Creates a new ContentSeeder instance.
@@ -34,7 +32,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         IDataTypeService dataTypeService,
         ILocalizationService localizationService,
         IDomainService domainService,
-        IShortStringHelper shortStringHelper,
         ILogger<ContentSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
@@ -47,7 +44,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         _dataTypeService = dataTypeService;
         _localizationService = localizationService;
         _domainService = domainService;
-        _shortStringHelper = shortStringHelper;
     }
 
     /// <inheritdoc />
@@ -213,6 +209,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         LogProgress(totalCreated, targetTotal, "content nodes");
                     }
                 }
+
+                Logger.LogInformation("Completed root section {Section}/{TotalSections} - Total content created: {Created}/{Target}",
+                    section, contentConfig.RootSections, totalCreated, targetTotal);
             }
             catch (Exception ex)
             {

@@ -1,6 +1,41 @@
 namespace Umbraco.Community.DummyDataSeeder.Configuration;
 
 /// <summary>
+/// Predefined dataset size presets for quick configuration.
+/// </summary>
+public enum SeederPreset
+{
+    /// <summary>
+    /// Custom configuration - use individual settings from SeederConfiguration.
+    /// </summary>
+    Custom,
+
+    /// <summary>
+    /// Small dataset for quick testing (~200 items total).
+    /// Languages: 3, Content: 50, Media: 30, Users: 5
+    /// </summary>
+    Small,
+
+    /// <summary>
+    /// Medium dataset for moderate testing (~2,000 items total).
+    /// Languages: 10, Content: 500, Media: 500, Users: 20
+    /// </summary>
+    Medium,
+
+    /// <summary>
+    /// Large dataset for performance testing (~25,000 items total).
+    /// Languages: 20, Content: 10,000, Media: 5,000, Users: 50
+    /// </summary>
+    Large,
+
+    /// <summary>
+    /// Massive dataset for stress testing (~100,000 items total).
+    /// Languages: 30, Content: 50,000, Media: 20,000, Users: 100
+    /// </summary>
+    Massive
+}
+
+/// <summary>
 /// Runtime options for the DummyDataSeeder package.
 /// Configure in appsettings.json under "DummyDataSeeder:Options" section.
 /// </summary>
@@ -12,10 +47,17 @@ public class SeederOptions
     public const string SectionName = "DummyDataSeeder:Options";
 
     /// <summary>
-    /// Enable/disable the entire seeder package.
-    /// Default: true
+    /// Predefined dataset size preset. When set to anything other than Custom,
+    /// this overrides the SeederConfiguration values.
+    /// Default: Custom (use SeederConfiguration values)
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public SeederPreset Preset { get; set; } = SeederPreset.Custom;
+
+    /// <summary>
+    /// Enable/disable the entire seeder package.
+    /// Default: false (must be explicitly enabled)
+    /// </summary>
+    public bool Enabled { get; set; } = false;
 
     /// <summary>
     /// Stop seeding if any seeder fails.

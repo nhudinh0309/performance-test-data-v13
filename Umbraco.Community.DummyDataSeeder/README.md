@@ -20,9 +20,36 @@ dotnet add package Umbraco.Community.DummyDataSeeder
 
 That's it! The package automatically registers with Umbraco and runs on startup.
 
-## Configuration
+## Quick Start with Presets
 
-Add configuration to your `appsettings.json`:
+The easiest way to get started is using a preset. Add this to your `appsettings.json`:
+
+```json
+{
+  "DummyDataSeeder": {
+    "Options": {
+      "Enabled": true,
+      "Preset": "Medium"
+    }
+  }
+}
+```
+
+### Available Presets
+
+| Preset | Languages | Content | Media | Users | Total Items |
+|--------|-----------|---------|-------|-------|-------------|
+| `Small` | 3 | 50 | 30 | 5 | ~200 |
+| `Medium` | 10 | 500 | 405 | 20 | ~2,000 |
+| `Large` | 20 | 10,000 | 4,020 | 50 | ~25,000 |
+| `Massive` | 30 | 50,000 | 16,050 | 100 | ~100,000 |
+| `Custom` | - | - | - | - | Use SeederConfiguration |
+
+When using a preset, you don't need to specify the full `SeederConfiguration` section.
+
+## Custom Configuration
+
+For fine-grained control, set `Preset` to `Custom` (or omit it) and add configuration to your `appsettings.json`:
 
 ```json
 {
@@ -66,29 +93,32 @@ Add configuration to your `appsettings.json`:
       "PagesPerCategory": 100
     }
   },
-  "DummyDataSeeder:Options": {
-    "Enabled": true,
-    "StopOnError": false,
-    "FakerSeed": 12345,
-    "ProgressIntervalPercent": 10,
-    "EnabledSeeders": {
-      "Languages": true,
-      "Dictionary": true,
-      "DataTypes": true,
-      "DocumentTypes": true,
-      "Media": true,
-      "Content": true,
-      "Users": true
-    },
-    "Prefixes": {
-      "DataType": "Test_",
-      "ElementType": "testElement",
-      "VariantDocType": "testVariant",
-      "InvariantDocType": "testInvariant",
-      "Media": "Test_",
-      "Content": "Test_",
-      "User": "TestUser_",
-      "Dictionary": "Dict_"
+  "DummyDataSeeder": {
+    "Options": {
+      "Preset": "Custom",
+      "Enabled": true,
+      "StopOnError": false,
+      "FakerSeed": 12345,
+      "ProgressIntervalPercent": 10,
+      "EnabledSeeders": {
+        "Languages": true,
+        "Dictionary": true,
+        "DataTypes": true,
+        "DocumentTypes": true,
+        "Media": true,
+        "Content": true,
+        "Users": true
+      },
+      "Prefixes": {
+        "DataType": "Test_",
+        "ElementType": "testElement",
+        "VariantDocType": "testVariant",
+        "InvariantDocType": "testInvariant",
+        "Media": "Test_",
+        "Content": "Test_",
+        "User": "TestUser_",
+        "Dictionary": "Dict_"
+      }
     }
   }
 }
@@ -98,7 +128,8 @@ Add configuration to your `appsettings.json`:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `Enabled` | bool | true | Master switch to enable/disable seeding |
+| `Preset` | enum | Custom | Predefined dataset size (Small, Medium, Large, Massive, Custom) |
+| `Enabled` | bool | false | Master switch - must be explicitly enabled |
 | `StopOnError` | bool | false | Stop seeding if any seeder fails |
 | `FakerSeed` | int? | null | Seed for reproducible test data |
 | `ProgressIntervalPercent` | int | 10 | Log progress every N percent |
@@ -137,8 +168,10 @@ Set `FakerSeed` to a fixed value to generate the same test data across runs:
 
 ```json
 {
-  "DummyDataSeeder:Options": {
-    "FakerSeed": 12345
+  "DummyDataSeeder": {
+    "Options": {
+      "FakerSeed": 12345
+    }
   }
 }
 ```
@@ -147,14 +180,69 @@ Set `FakerSeed` to a fixed value to generate the same test data across runs:
 
 ```json
 {
-  "DummyDataSeeder:Options": {
-    "EnabledSeeders": {
-      "Users": false,
-      "Dictionary": false
+  "DummyDataSeeder": {
+    "Options": {
+      "EnabledSeeders": {
+        "Users": false,
+        "Dictionary": false
+      }
     }
   }
 }
 ```
+
+## Status Endpoint (for Automation)
+
+Poll the status endpoint to know when seeding is complete:
+
+```
+GET /umbraco/api/seederstatus/status
+```
+
+**Response:**
+```json
+{
+  "status": "Completed",
+  "isComplete": true,
+  "currentSeeder": null,
+  "executedCount": 7,
+  "failedCount": 0,
+  "elapsedMs": 45230,
+  "errorMessage": null
+}
+```
+
+**HTTP Status Codes:**
+- `200` - Seeding complete (Completed, CompletedWithErrors, or Skipped)
+- `202` - Seeding in progress (Running or NotStarted)
+- `503` - Seeding failed
+
+**Automation example (bash):**
+```bash
+# Wait for seeding to complete
+while true; do
+  response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/umbraco/api/seederstatus/status)
+  if [ "$response" = "200" ]; then
+    echo "Seeding complete!"
+    break
+  elif [ "$response" = "503" ]; then
+    echo "Seeding failed!"
+    exit 1
+  fi
+  sleep 10
+done
+```
+
+## Performance Considerations
+
+- **Database**: SQL Server is recommended for large datasets. SQLite may timeout with Large/Massive presets.
+- **Time estimates**:
+  - Small: ~30 seconds
+  - Medium: ~2-5 minutes
+  - Large: ~10-20 minutes
+  - Massive: ~30-60+ minutes
+- **Memory**: Large media generation requires adequate RAM. Consider reducing media counts if memory constrained.
+- **Disk space**: Media seeder generates actual files. Massive preset creates ~16,000+ media files.
 
 ## Requirements
 
