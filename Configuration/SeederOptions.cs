@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Configuration;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Predefined dataset size presets for quick configuration.
@@ -36,15 +36,15 @@ public enum SeederPreset
 }
 
 /// <summary>
-/// Runtime options for the DummyDataSeeder package.
-/// Configure in appsettings.json under "DummyDataSeeder:Options" section.
+/// Runtime options for the PerformanceTestDataSeeder package.
+/// Configure in appsettings.json under "PerformanceTestDataSeeder:Options" section.
 /// </summary>
 public class SeederOptions
 {
     /// <summary>
     /// Configuration section name in appsettings.json.
     /// </summary>
-    public const string SectionName = "DummyDataSeeder:Options";
+    public const string SectionName = "PerformanceTestDataSeeder:Options";
 
     /// <summary>
     /// Predefined dataset size preset. When set to anything other than Custom,

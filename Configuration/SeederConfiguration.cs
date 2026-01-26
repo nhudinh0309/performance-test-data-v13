@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Configuration;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Configuration model for seeder target counts.
@@ -170,6 +170,12 @@ public class DocumentTypesConfig
     /// Number of Block Grid data types.
     /// </summary>
     public int BlockGrid { get; set; } = 60;
+
+    /// <summary>
+    /// Depth of nested blocks (blocks containing BlockList properties with other blocks).
+    /// Minimum 1 (no nesting), recommended 2-8 depending on load test requirements.
+    /// </summary>
+    public int NestingDepth { get; set; } = 2;
 
     /// <summary>
     /// Total element types to be created.

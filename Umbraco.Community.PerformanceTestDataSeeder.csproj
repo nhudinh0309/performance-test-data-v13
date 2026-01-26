@@ -3,17 +3,17 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>Umbraco.Community.DummyDataSeeder</RootNamespace>
+    <RootNamespace>Umbraco.Community.PerformanceTestDataSeeder</RootNamespace>
     <LangVersion>latest</LangVersion>
 
     <!-- NuGet Package Metadata -->
-    <PackageId>Umbraco.Community.DummyDataSeeder</PackageId>
+    <PackageId>Umbraco.Community.PerformanceTestDataSeeder</PackageId>
     <!-- v1.x = Umbraco 13/14, v2.x = Umbraco 15/16 (separate branch) -->
     <Version>1.0.0</Version>
     <Authors>Your Name</Authors>
     <Company>Your Company</Company>
-    <Title>Umbraco Dummy Data Seeder</Title>
-    <Description>A configurable dummy data seeder for Umbraco CMS v13/14 for performance and load testing. Automatically seeds languages, dictionary items, data types, document types, media, content, and users.</Description>
+    <Title>Umbraco Performance Test Data Seeder</Title>
+    <Description>A configurable performance test data seeder for Umbraco CMS v13/14 for performance and load testing. Automatically seeds languages, dictionary items, data types, document types, media, content, and users.</Description>
     <PackageTags>umbraco;cms;seeder;test-data;performance;load-testing;umbraco13;umbraco14</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

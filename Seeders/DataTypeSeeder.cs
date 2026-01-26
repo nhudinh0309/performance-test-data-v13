@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -7,8 +7,8 @@ using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Community.DummyDataSeeder.Configuration;
-using Umbraco.Community.DummyDataSeeder.Infrastructure;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Seeds custom data types for use by document types.

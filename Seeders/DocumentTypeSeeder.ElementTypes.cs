@@ -1,14 +1,144 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
-using Umbraco.Community.DummyDataSeeder.Configuration;
+using Umbraco.Cms.Core.PropertyEditors;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Partial class containing Element Type creation logic.
 /// </summary>
 public partial class DocumentTypeSeeder
 {
+    /// <summary>
+    /// Creates nested container element types with BlockList properties.
+    /// Each level contains a BlockList that allows elements from the level below.
+    /// Level N (deepest) = leaf elements (Simple/Medium/Complex)
+    /// Level 1 (top) = outermost container
+    /// </summary>
+    private void CreateNestedContainerElements(int nestingDepth, CancellationToken cancellationToken)
+    {
+        var prefix = GetPrefix("elementtype");
+        if (!_propertyEditors.TryGet(Constants.PropertyEditors.Aliases.BlockList, out var editor))
+        {
+            Logger.LogWarning("BlockList property editor not found - skipping nested containers");
+            return;
+        }
+
+        // Level N (deepest) = existing leaf elements (Simple/Medium/Complex)
+        // We start creating containers from level N-1 down to level 1
+
+        // Initialize the deepest level with existing leaf elements
+        _nestedContainersByLevel[nestingDepth] = Context.ElementTypes.ToList();
+
+        for (int level = nestingDepth - 1; level >= 1; level--)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var elementsForThisLevel = new List<IContentType>();
+            var childElements = _nestedContainersByLevel[level + 1];
+
+            // Create a BlockList data type for this nesting level
+            var blockListDataType = CreateNestedBlockListDataType(level, childElements);
+            if (blockListDataType == null) continue;
+
+            // Create 3 container element types per level (to provide variety)
+            for (int i = 1; i <= 3; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var alias = $"{prefix}NestedBlock_Depth{level}_{i}";
+                    var name = $"Nested Block Depth {level} - {i}";
+
+                    var containerElement = new ContentType(_shortStringHelper, -1)
+                    {
+                        Alias = alias,
+                        Name = name,
+                        IsElement = true,
+                        Icon = "icon-layers"
+                    };
+
+                    // Add a title property
+                    var contentGroup = new PropertyGroup(true) { Alias = "content", Name = "Content", SortOrder = 1 };
+                    contentGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, GetTextstringDataType())
+                    {
+                        Alias = "containerTitle",
+                        Name = "Container Title",
+                        SortOrder = 1
+                    });
+
+                    // Add the nested BlockList property
+                    contentGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, blockListDataType)
+                    {
+                        Alias = "nestedBlocks",
+                        Name = "Nested Blocks",
+                        SortOrder = 2
+                    });
+
+                    containerElement.PropertyGroups.Add(contentGroup);
+
+                    _contentTypeService.Save(containerElement);
+                    elementsForThisLevel.Add(containerElement);
+                    Context.ElementTypes.Add(containerElement);
+
+                    Logger.LogDebug("Created nested block element: {Alias} (depth {Level})", alias, level);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to create nested container at level {Level}", level);
+                    if (Options.StopOnError) throw;
+                }
+            }
+
+            _nestedContainersByLevel[level] = elementsForThisLevel;
+        }
+
+        Logger.LogInformation("Created nested container elements for {Levels} levels", nestingDepth - 1);
+    }
+
+    /// <summary>
+    /// Creates a BlockList data type configured to allow the specified child elements.
+    /// </summary>
+    private IDataType? CreateNestedBlockListDataType(int level, List<IContentType> allowedElements)
+    {
+        var editor = _propertyEditors[Constants.PropertyEditors.Aliases.BlockList];
+        if (editor == null) return null;
+
+        var prefix = GetPrefix("datatype");
+
+        try
+        {
+            var name = $"{prefix}NestedBlockList_Depth{level}";
+            var dataType = new DataType(editor, _serializer)
+            {
+                Name = name,
+                DatabaseType = ValueStorageType.Ntext
+            };
+
+            var blocks = allowedElements.Select(element => new BlockListConfiguration.BlockConfiguration
+            {
+                ContentElementTypeKey = element.Key,
+                Label = element.Name
+            }).ToArray();
+
+            dataType.Configuration = new BlockListConfiguration { Blocks = blocks };
+
+            _dataTypeService.Save(dataType);
+            Logger.LogDebug("Created nested BlockList data type: {Name} with {Count} allowed blocks", name, blocks.Length);
+
+            return dataType;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create nested BlockList data type for level {Level}", level);
+            if (Options.StopOnError) throw;
+            return null;
+        }
+    }
+
     private void CreateElementTypes(ComplexityConfig config, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix("elementtype");

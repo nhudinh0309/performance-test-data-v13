@@ -1,19 +1,19 @@
-namespace Umbraco.Community.DummyDataSeeder.Composing;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Composing;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Notifications;
-using Umbraco.Community.DummyDataSeeder.Configuration;
-using Umbraco.Community.DummyDataSeeder.Infrastructure;
-using Umbraco.Community.DummyDataSeeder.Seeders;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
+using Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 /// <summary>
-/// Composer for registering DummyDataSeeder services with Umbraco.
+/// Composer for registering PerformanceTestDataSeeder services with Umbraco.
 /// This is automatically discovered and executed by Umbraco during startup.
 /// </summary>
-public class DummyDataSeederComposer : IComposer
+public class PerformanceTestDataSeederComposer : IComposer
 {
     /// <inheritdoc />
     public void Compose(IUmbracoBuilder builder)

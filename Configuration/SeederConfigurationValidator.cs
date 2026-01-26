@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Configuration;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Validates SeederConfiguration values to catch configuration errors early.
@@ -9,6 +9,11 @@ public class SeederConfigurationValidator
     /// Maximum number of languages supported (based on available cultures pool).
     /// </summary>
     public const int MaxLanguages = 30;
+
+    /// <summary>
+    /// Maximum nesting depth for nested blocks (to prevent excessive recursion).
+    /// </summary>
+    public const int MaxNestingDepth = 10;
 
     /// <summary>
     /// Validates the seeder configuration.
@@ -79,6 +84,16 @@ public class SeederConfigurationValidator
         ValidateComplexityConfig(config.InvariantDocTypes, "DocumentTypes.InvariantDocTypes", errors);
         ValidateNonNegative(config.BlockList, "DocumentTypes.BlockList", errors);
         ValidateNonNegative(config.BlockGrid, "DocumentTypes.BlockGrid", errors);
+
+        // Validate NestingDepth
+        if (config.NestingDepth < 1)
+        {
+            errors.Add($"DocumentTypes.NestingDepth must be >= 1 (got {config.NestingDepth})");
+        }
+        if (config.NestingDepth > MaxNestingDepth)
+        {
+            errors.Add($"DocumentTypes.NestingDepth cannot exceed {MaxNestingDepth} (got {config.NestingDepth})");
+        }
     }
 
     private void ValidateComplexityConfig(ComplexityConfig config, string prefix, List<string> errors)

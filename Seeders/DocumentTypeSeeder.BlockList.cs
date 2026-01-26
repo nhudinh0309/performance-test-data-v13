@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core;
@@ -36,6 +36,19 @@ public partial class DocumentTypeSeeder
                 };
 
                 var blocks = new List<BlockListConfiguration.BlockConfiguration>();
+
+                // Add level 1 container elements (if nested containers exist)
+                if (_nestedContainersByLevel.TryGetValue(1, out var level1Containers) && level1Containers.Count > 0)
+                {
+                    foreach (var container in level1Containers)
+                    {
+                        blocks.Add(new BlockListConfiguration.BlockConfiguration
+                        {
+                            ContentElementTypeKey = container.Key,
+                            Label = container.Name
+                        });
+                    }
+                }
 
                 // Add one block of each complexity (using pre-cached lists)
                 if (_cachedSimpleElements?.Count > 0)

@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Configuration;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Provides predefined SeederConfiguration values for each preset.
@@ -54,7 +54,8 @@ public static class SeederPresetConfigurations
                 VariantDocTypes = new ComplexityConfig { Simple = 5, Medium = 3, Complex = 2 },
                 InvariantDocTypes = new ComplexityConfig { Simple = 2, Medium = 1, Complex = 1 },
                 BlockList = 3,
-                BlockGrid = 3
+                BlockGrid = 3,
+                NestingDepth = 2
             },
             Media = new MediaConfig
             {
@@ -108,7 +109,8 @@ public static class SeederPresetConfigurations
                 VariantDocTypes = new ComplexityConfig { Simple = 20, Medium = 12, Complex = 8 },
                 InvariantDocTypes = new ComplexityConfig { Simple = 8, Medium = 5, Complex = 3 },
                 BlockList = 15,
-                BlockGrid = 15
+                BlockGrid = 15,
+                NestingDepth = 4
             },
             Media = new MediaConfig
             {
@@ -162,7 +164,8 @@ public static class SeederPresetConfigurations
                 VariantDocTypes = new ComplexityConfig { Simple = 55, Medium = 33, Complex = 22 },
                 InvariantDocTypes = new ComplexityConfig { Simple = 20, Medium = 12, Complex = 8 },
                 BlockList = 40,
-                BlockGrid = 60
+                BlockGrid = 60,
+                NestingDepth = 6
             },
             Media = new MediaConfig
             {
@@ -216,7 +219,8 @@ public static class SeederPresetConfigurations
                 VariantDocTypes = new ComplexityConfig { Simple = 80, Medium = 48, Complex = 32 },
                 InvariantDocTypes = new ComplexityConfig { Simple = 30, Medium = 18, Complex = 12 },
                 BlockList = 60,
-                BlockGrid = 80
+                BlockGrid = 80,
+                NestingDepth = 8
             },
             Media = new MediaConfig
             {

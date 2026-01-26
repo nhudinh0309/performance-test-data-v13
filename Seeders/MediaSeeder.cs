@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,8 +12,8 @@ using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
 using Umbraco.Extensions;
-using Umbraco.Community.DummyDataSeeder.Configuration;
-using Umbraco.Community.DummyDataSeeder.Infrastructure;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Seeds media items (PDFs, images, videos) for use in content.

@@ -1,10 +1,11 @@
-# Umbraco.Community.DummyDataSeeder
+# Umbraco.Community.PerformanceTestDataSeeder
 
 A configurable dummy data seeder for Umbraco CMS v13+ designed for performance and load testing.
 
 ## Features
 
 - Seeds languages, dictionary items, data types, document types, media, content, and users
+- **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
 - Fully configurable via `appsettings.json`
 - Reproducible test data with configurable Faker seed
 - Enable/disable individual seeders
@@ -15,10 +16,73 @@ A configurable dummy data seeder for Umbraco CMS v13+ designed for performance a
 ## Installation
 
 ```bash
-dotnet add package Umbraco.Community.DummyDataSeeder
+dotnet add package Umbraco.Community.PerformanceTestDataSeeder
 ```
 
 That's it! The package automatically registers with Umbraco and runs on startup.
+
+## Local Development
+
+To test the package locally before publishing:
+
+1. **Add a project reference** to your Umbraco project's `.csproj`:
+   ```xml
+   <ProjectReference Include="..\path\to\Umbraco.Community.PerformanceTestDataSeeder.csproj" />
+   ```
+
+2. **Add configuration** to `appsettings.json`:
+   ```json
+   {
+     "PerformanceTestDataSeeder": {
+       "Options": {
+         "Enabled": true,
+         "Preset": "Small",
+         "StopOnError": true
+       }
+     }
+   }
+   ```
+
+3. **Run the Umbraco project**:
+   ```bash
+   dotnet run
+   ```
+
+4. **Check the status endpoint** to verify seeding completed:
+   ```
+   GET /umbraco/api/seederstatus/status
+   ```
+
+## Building & Packaging
+
+To create a NuGet package for distribution:
+
+```bash
+# Build the package
+dotnet pack -c Release
+
+# The .nupkg file will be in bin/Release/
+```
+
+To publish to NuGet.org:
+
+```bash
+# Push to NuGet (requires API key)
+dotnet nuget push bin/Release/Umbraco.Community.PerformanceTestDataSeeder.1.0.0.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
+```
+
+For local testing with a NuGet package (instead of project reference):
+
+```bash
+# Create a local NuGet source folder
+mkdir ~/local-nugets
+
+# Pack and copy to local source
+dotnet pack -c Release -o ~/local-nugets
+
+# Add local source to your test project's NuGet.config or use:
+dotnet add package Umbraco.Community.PerformanceTestDataSeeder --source ~/local-nugets
+```
 
 ## Quick Start with Presets
 
@@ -26,7 +90,7 @@ The easiest way to get started is using a preset. Add this to your `appsettings.
 
 ```json
 {
-  "DummyDataSeeder": {
+  "PerformanceTestDataSeeder": {
     "Options": {
       "Enabled": true,
       "Preset": "Medium"
@@ -37,13 +101,13 @@ The easiest way to get started is using a preset. Add this to your `appsettings.
 
 ### Available Presets
 
-| Preset | Languages | Content | Media | Users | Total Items |
-|--------|-----------|---------|-------|-------|-------------|
-| `Small` | 3 | 50 | 30 | 5 | ~200 |
-| `Medium` | 10 | 500 | 405 | 20 | ~2,000 |
-| `Large` | 20 | 10,000 | 4,020 | 50 | ~25,000 |
-| `Massive` | 30 | 50,000 | 16,050 | 100 | ~100,000 |
-| `Custom` | - | - | - | - | Use SeederConfiguration |
+| Preset | Languages | Content | Media | Users | NestingDepth | Total Items |
+|--------|-----------|---------|-------|-------|--------------|-------------|
+| `Small` | 3 | 50 | 30 | 5 | 2 | ~200 |
+| `Medium` | 10 | 500 | 405 | 20 | 4 | ~2,000 |
+| `Large` | 20 | 10,000 | 4,020 | 50 | 6 | ~25,000 |
+| `Massive` | 30 | 50,000 | 16,050 | 100 | 8 | ~100,000 |
+| `Custom` | - | - | - | - | - | Use SeederConfiguration |
 
 When using a preset, you don't need to specify the full `SeederConfiguration` section.
 
@@ -75,7 +139,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
       "VariantDocTypes": { "Simple": 55, "Medium": 33, "Complex": 22 },
       "InvariantDocTypes": { "Simple": 20, "Medium": 12, "Complex": 8 },
       "BlockList": 40,
-      "BlockGrid": 60
+      "BlockGrid": 60,
+      "NestingDepth": 4
     },
     "Media": {
       "PDF": { "Count": 200, "FolderCount": 10 },
@@ -93,7 +158,7 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
       "PagesPerCategory": 100
     }
   },
-  "DummyDataSeeder": {
+  "PerformanceTestDataSeeder": {
     "Options": {
       "Preset": "Custom",
       "Enabled": true,
@@ -142,7 +207,7 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 1. **LanguageSeeder** - Creates languages from culture pool
 2. **DictionarySeeder** - Creates dictionary items with translations
 3. **DataTypeSeeder** - Creates custom data types
-4. **DocumentTypeSeeder** - Creates element types, document types, block types, and templates
+4. **DocumentTypeSeeder** - Creates element types, nested container elements, document types, block types, and templates
 5. **MediaSeeder** - Creates media items (PDFs, images, videos)
 6. **ContentSeeder** - Creates content hierarchy
 7. **UserSeeder** - Creates test users
@@ -162,13 +227,39 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | Content Nodes | 300 |
 | Users | 30 |
 
+## Nested Blocks
+
+The seeder creates nested block structures to simulate real-world content complexity. The `NestingDepth` setting controls how deep blocks can be nested.
+
+**Example with NestingDepth = 2:**
+```
+BlockList
+  └── NestedBlock_Depth1
+        └── nestedBlocks (BlockList)
+              └── Simple/Medium/Complex Elements
+```
+
+**Example with NestingDepth = 4:**
+```
+BlockList
+  └── NestedBlock_Depth1
+        └── nestedBlocks → NestedBlock_Depth2
+                            └── nestedBlocks → NestedBlock_Depth3
+                                                └── nestedBlocks → Simple/Medium/Complex Elements
+```
+
+This creates realistic load testing scenarios where:
+- JSON serialization/deserialization is stressed
+- Backoffice rendering performance is tested
+- Content API handles deeply nested structures
+
 ## Reproducible Test Data
 
 Set `FakerSeed` to a fixed value to generate the same test data across runs:
 
 ```json
 {
-  "DummyDataSeeder": {
+  "PerformanceTestDataSeeder": {
     "Options": {
       "FakerSeed": 12345
     }
@@ -180,7 +271,7 @@ Set `FakerSeed` to a fixed value to generate the same test data across runs:
 
 ```json
 {
-  "DummyDataSeeder": {
+  "PerformanceTestDataSeeder": {
     "Options": {
       "EnabledSeeders": {
         "Users": false,

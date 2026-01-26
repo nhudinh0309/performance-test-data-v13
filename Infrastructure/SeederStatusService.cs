@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Tracks the status of the seeding operation.

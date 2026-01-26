@@ -1,11 +1,11 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Community.DummyDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Abstract base class for all seeders. Provides common functionality for
@@ -86,7 +86,7 @@ public abstract class BaseSeeder<TSeeder> : ISeeder where TSeeder : class
         // Check if master switch is enabled
         if (!Options.Enabled)
         {
-            Logger.LogDebug("{SeederName}: Skipping - DummyDataSeeder is disabled globally", SeederName);
+            Logger.LogDebug("{SeederName}: Skipping - PerformanceTestDataSeeder is disabled globally", SeederName);
             return;
         }
 

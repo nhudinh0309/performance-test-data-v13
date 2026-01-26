@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using Bogus;
 using Umbraco.Cms.Core.Models;

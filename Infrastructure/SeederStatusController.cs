@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using Microsoft.AspNetCore.Mvc;
 using Umbraco.Cms.Web.Common.Controllers;

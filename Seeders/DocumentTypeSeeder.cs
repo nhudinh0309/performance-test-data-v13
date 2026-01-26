@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,8 +8,8 @@ using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
-using Umbraco.Community.DummyDataSeeder.Configuration;
-using Umbraco.Community.DummyDataSeeder.Infrastructure;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Seeds element types, document types, block data types, and templates.
@@ -34,6 +34,9 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     private List<IContentType>? _cachedSimpleElements;
     private List<IContentType>? _cachedMediumElements;
     private List<IContentType>? _cachedComplexElements;
+
+    // Nested container elements by level (level 1 = top, higher = deeper)
+    private Dictionary<int, List<IContentType>> _nestedContainersByLevel = new();
 
     /// <summary>
     /// Creates a new DocumentTypeSeeder instance.
@@ -95,20 +98,27 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         // Cache element types by complexity for Block List/Grid creation
         CategorizeElementTypes();
 
-        // Phase 2: Create Block List data types
-        Logger.LogInformation("Phase 2: Creating Block List data types...");
+        // Phase 2: Create Nested Container Elements (if NestingDepth > 1)
+        if (docTypeConfig.NestingDepth > 1)
+        {
+            Logger.LogInformation("Phase 2: Creating Nested Container Elements (depth: {Depth})...", docTypeConfig.NestingDepth);
+            CreateNestedContainerElements(docTypeConfig.NestingDepth, cancellationToken);
+        }
+
+        // Phase 3: Create Block List data types
+        Logger.LogInformation("Phase 3: Creating Block List data types...");
         var blockListDataTypes = CreateBlockListDataTypes(docTypeConfig.BlockList, cancellationToken);
 
-        // Phase 3: Create Block Grid data types
-        Logger.LogInformation("Phase 3: Creating Block Grid data types...");
+        // Phase 4: Create Block Grid data types
+        Logger.LogInformation("Phase 4: Creating Block Grid data types...");
         var blockGridDataTypes = CreateBlockGridDataTypes(docTypeConfig.BlockGrid, cancellationToken);
 
-        // Phase 4: Create Variant Document Types with Templates
-        Logger.LogInformation("Phase 4: Creating Variant Document Types with Templates...");
+        // Phase 5: Create Variant Document Types with Templates
+        Logger.LogInformation("Phase 5: Creating Variant Document Types with Templates...");
         CreateVariantDocumentTypes(docTypeConfig.VariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
 
-        // Phase 5: Create Invariant Document Types with Templates
-        Logger.LogInformation("Phase 5: Creating Invariant Document Types with Templates...");
+        // Phase 6: Create Invariant Document Types with Templates
+        Logger.LogInformation("Phase 6: Creating Invariant Document Types with Templates...");
         CreateInvariantDocumentTypes(docTypeConfig.InvariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
 
         // Store block data types in context for ContentSeeder

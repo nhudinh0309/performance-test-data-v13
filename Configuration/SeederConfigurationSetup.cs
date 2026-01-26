@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Configuration;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 using Microsoft.Extensions.Options;
 
@@ -72,9 +72,10 @@ public class SeederConfigurationSetup : IConfigureOptions<SeederConfiguration>
         target.DocumentTypes.InvariantDocTypes.Medium = source.DocumentTypes.InvariantDocTypes.Medium;
         target.DocumentTypes.InvariantDocTypes.Complex = source.DocumentTypes.InvariantDocTypes.Complex;
 
-        // DocumentTypes - BlockList/BlockGrid
+        // DocumentTypes - BlockList/BlockGrid/NestingDepth
         target.DocumentTypes.BlockList = source.DocumentTypes.BlockList;
         target.DocumentTypes.BlockGrid = source.DocumentTypes.BlockGrid;
+        target.DocumentTypes.NestingDepth = source.DocumentTypes.NestingDepth;
 
         // Media
         target.Media.PDF.Count = source.Media.PDF.Count;

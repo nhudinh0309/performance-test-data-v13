@@ -1,7 +1,7 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
-/// Interface for all seeders in the DummyDataSeeder package.
+/// Interface for all seeders in the PerformanceTestDataSeeder package.
 /// </summary>
 public interface ISeeder
 {

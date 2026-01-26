@@ -1,4 +1,4 @@
-namespace Umbraco.Community.DummyDataSeeder.Seeders;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,8 +8,8 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Community.DummyDataSeeder.Configuration;
-using Umbraco.Community.DummyDataSeeder.Infrastructure;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Seeds content nodes with hierarchical structure.
@@ -508,6 +508,21 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var layoutItems = new List<object>();
         var contentDataItems = new List<Dictionary<string, object>>();
 
+        // Add nested block element first (if available)
+        var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
+        if (nestedBlock != null)
+        {
+            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            if (elementType != null)
+            {
+                var contentUdi = Guid.NewGuid().ToString("N");
+                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentUdi, 1);
+                contentDataItems.Add(nestedContentData);
+                layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+            }
+        }
+
+        // Add regular complexity blocks
         foreach (var complexity in new[] { "Simple", "Medium", "Complex" })
         {
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
@@ -544,6 +559,27 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var layoutItems = new List<object>();
         var contentDataItems = new List<Dictionary<string, object>>();
 
+        // Add nested block element first (if available)
+        var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
+        if (nestedBlock != null)
+        {
+            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            if (elementType != null)
+            {
+                var contentUdi = Guid.NewGuid().ToString("N");
+                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentUdi, 1);
+                contentDataItems.Add(nestedContentData);
+                layoutItems.Add(new
+                {
+                    contentUdi = $"umb://element/{contentUdi}",
+                    columnSpan = 12,
+                    rowSpan = 1,
+                    areas = Array.Empty<object>()
+                });
+            }
+        }
+
+        // Add regular complexity blocks
         foreach (var complexity in new[] { "Simple", "Medium", "Complex" })
         {
             var block = FindBlockGridByComplexity(blockConfig.Blocks, complexity);
@@ -598,6 +634,108 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
 
         return properties;
+    }
+
+    /// <summary>
+    /// Builds content data for nested block elements, recursively generating child blocks.
+    /// </summary>
+    private Dictionary<string, object> BuildNestedBlockContentDataObject(
+        IContentType elementType, Guid elementTypeKey, string contentUdi, int currentDepth, int maxDepth = 10)
+    {
+        var properties = new Dictionary<string, object>
+        {
+            ["contentTypeKey"] = elementTypeKey.ToString(),
+            ["udi"] = $"umb://element/{contentUdi}"
+        };
+
+        foreach (var group in elementType.PropertyGroups)
+        {
+            if (group.PropertyTypes == null) continue;
+            foreach (var propType in group.PropertyTypes)
+            {
+                // Handle nestedBlocks property specially - generate nested content
+                if (propType.Alias == "nestedBlocks" && currentDepth < maxDepth)
+                {
+                    var nestedBlockListJson = GenerateNestedBlockListJson(propType, currentDepth + 1, maxDepth);
+                    if (!string.IsNullOrEmpty(nestedBlockListJson))
+                        properties[propType.Alias] = nestedBlockListJson;
+                }
+                else
+                {
+                    var propValue = GeneratePropertyValue(propType);
+                    if (propValue != null)
+                        properties[propType.Alias] = propValue;
+                }
+            }
+        }
+
+        return properties;
+    }
+
+    /// <summary>
+    /// Generates BlockList JSON for nested blocks property.
+    /// </summary>
+    private string? GenerateNestedBlockListJson(IPropertyType propType, int currentDepth, int maxDepth)
+    {
+        // Get the BlockList configuration for this property
+        if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
+        {
+            dataType = _dataTypeService.GetDataType(propType.DataTypeId);
+            if (dataType != null)
+                Context.DataTypeCache[propType.DataTypeId] = dataType;
+        }
+
+        if (dataType?.Configuration is not BlockListConfiguration blockConfig)
+            return null;
+
+        if (blockConfig.Blocks == null || blockConfig.Blocks.Length == 0)
+            return null;
+
+        var layoutItems = new List<object>();
+        var contentDataItems = new List<Dictionary<string, object>>();
+
+        // Check if there are more nested containers at this level
+        var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
+        if (nestedBlock != null && currentDepth < maxDepth)
+        {
+            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            if (elementType != null)
+            {
+                var contentUdi = Guid.NewGuid().ToString("N");
+                var nestedContentData = BuildNestedBlockContentDataObject(
+                    elementType, nestedBlock.ContentElementTypeKey, contentUdi, currentDepth, maxDepth);
+                contentDataItems.Add(nestedContentData);
+                layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+            }
+        }
+
+        // Add leaf elements (Simple/Medium/Complex)
+        foreach (var complexity in new[] { "Simple", "Medium" })
+        {
+            var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
+            if (block == null) continue;
+
+            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            if (elementType == null) continue;
+
+            var contentUdi = Guid.NewGuid().ToString("N");
+            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentUdi));
+            layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+        }
+
+        if (layoutItems.Count == 0) return null;
+
+        var blockListValue = new
+        {
+            layout = new Dictionary<string, object>
+            {
+                ["Umbraco.BlockList"] = layoutItems
+            },
+            contentData = contentDataItems,
+            settingsData = Array.Empty<object>()
+        };
+
+        return JsonSerializer.Serialize(blockListValue, JsonOptions);
     }
 
     private object? GeneratePropertyValue(IPropertyType propType)
@@ -669,6 +807,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         return null;
     }
 
+    private BlockListConfiguration.BlockConfiguration? FindNestedBlockElement(
+        BlockListConfiguration.BlockConfiguration[] blocks)
+    {
+        foreach (var block in blocks)
+        {
+            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            if (elementType?.Alias.Contains("NestedBlock_Depth", StringComparison.OrdinalIgnoreCase) == true)
+                return block;
+        }
+        return null;
+    }
+
     private BlockGridConfiguration.BlockGridBlockConfiguration? FindBlockGridByComplexity(
         BlockGridConfiguration.BlockGridBlockConfiguration[] blocks, string complexity)
     {
@@ -676,6 +826,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
             if (elementType?.Alias.Contains(complexity, StringComparison.OrdinalIgnoreCase) == true)
+                return block;
+        }
+        return null;
+    }
+
+    private BlockGridConfiguration.BlockGridBlockConfiguration? FindNestedBlockGridElement(
+        BlockGridConfiguration.BlockGridBlockConfiguration[] blocks)
+    {
+        foreach (var block in blocks)
+        {
+            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            if (elementType?.Alias.Contains("NestedBlock_Depth", StringComparison.OrdinalIgnoreCase) == true)
                 return block;
         }
         return null;

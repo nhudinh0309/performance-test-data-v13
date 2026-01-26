@@ -1,11 +1,11 @@
-namespace Umbraco.Community.DummyDataSeeder.Infrastructure;
+namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
-using Umbraco.Community.DummyDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Notification handler that orchestrates the execution of all seeders in the correct order.
@@ -47,7 +47,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
     {
         if (!_options.Enabled)
         {
-            _logger.LogInformation("DummyDataSeeder: Disabled in configuration, skipping all seeders");
+            _logger.LogInformation("PerformanceTestDataSeeder: Disabled in configuration, skipping all seeders");
             _statusService.SetSkipped();
             return;
         }
@@ -55,14 +55,14 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         // Log preset being used
         if (_options.Preset != SeederPreset.Custom)
         {
-            _logger.LogInformation("DummyDataSeeder: Using preset '{Preset}'", _options.Preset);
+            _logger.LogInformation("PerformanceTestDataSeeder: Using preset '{Preset}'", _options.Preset);
         }
 
         // Validate configuration (preset has already been applied via SeederConfigurationSetup)
         var validationResult = _validator.Validate(_config);
         if (!validationResult.IsValid)
         {
-            _logger.LogError("DummyDataSeeder: Configuration validation failed:");
+            _logger.LogError("PerformanceTestDataSeeder: Configuration validation failed:");
             foreach (var error in validationResult.Errors)
             {
                 _logger.LogError("  - {Error}", error);
@@ -71,15 +71,15 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
             if (_options.StopOnError)
             {
                 throw new InvalidOperationException(
-                    $"DummyDataSeeder configuration is invalid: {string.Join(", ", validationResult.Errors)}");
+                    $"PerformanceTestDataSeeder configuration is invalid: {string.Join(", ", validationResult.Errors)}");
             }
 
-            _logger.LogWarning("DummyDataSeeder: Continuing despite validation errors (StopOnError=false)");
+            _logger.LogWarning("PerformanceTestDataSeeder: Continuing despite validation errors (StopOnError=false)");
         }
 
         var seederList = _seeders.ToList();
         _logger.LogInformation(
-            "DummyDataSeeder: Starting orchestration of {Count} seeders (FakerSeed: {Seed})",
+            "PerformanceTestDataSeeder: Starting orchestration of {Count} seeders (FakerSeed: {Seed})",
             seederList.Count,
             _options.FakerSeed?.ToString() ?? "auto");
 
@@ -94,7 +94,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("DummyDataSeeder: Orchestration cancelled");
+                    _logger.LogWarning("PerformanceTestDataSeeder: Orchestration cancelled");
                     break;
                 }
 
@@ -112,7 +112,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
                 catch (Exception ex)
                 {
                     failedCount++;
-                    _logger.LogError(ex, "DummyDataSeeder: Seeder {SeederName} failed", seeder.SeederName);
+                    _logger.LogError(ex, "PerformanceTestDataSeeder: Seeder {SeederName} failed", seeder.SeederName);
 
                     if (_options.StopOnError)
                     {
@@ -126,7 +126,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
             _statusService.SetCompleted(executedCount, failedCount, totalStopwatch.ElapsedMilliseconds);
 
             _logger.LogInformation(
-                "DummyDataSeeder: Orchestration complete - {Executed} seeders executed, {Failed} failed, total time: {ElapsedMs}ms",
+                "PerformanceTestDataSeeder: Orchestration complete - {Executed} seeders executed, {Failed} failed, total time: {ElapsedMs}ms",
                 executedCount,
                 failedCount,
                 totalStopwatch.ElapsedMilliseconds);
