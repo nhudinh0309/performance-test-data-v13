@@ -19,7 +19,7 @@ public partial class DocumentTypeSeeder
     /// </summary>
     private void CreateNestedContainerElements(int nestingDepth, CancellationToken cancellationToken)
     {
-        var prefix = GetPrefix("elementtype");
+        var prefix = GetPrefix(PrefixType.ElementType);
         if (!_propertyEditors.TryGet(Constants.PropertyEditors.Aliases.BlockList, out var editor))
         {
             Logger.LogWarning("BlockList property editor not found - skipping nested containers");
@@ -82,7 +82,7 @@ public partial class DocumentTypeSeeder
 
                     _contentTypeService.Save(containerElement);
                     elementsForThisLevel.Add(containerElement);
-                    Context.ElementTypes.Add(containerElement);
+                    Context.AddElementType(containerElement);
 
                     Logger.LogDebug("Created nested block element: {Alias} (depth {Level})", alias, level);
                 }
@@ -94,9 +94,33 @@ public partial class DocumentTypeSeeder
             }
 
             _nestedContainersByLevel[level] = elementsForThisLevel;
+
+            // Validate level was created successfully
+            if (elementsForThisLevel.Count == 0)
+            {
+                Logger.LogWarning("Failed to create any containers for nesting level {Level}. Nested block structure may be incomplete.", level);
+            }
         }
 
-        Logger.LogInformation("Created nested container elements for {Levels} levels", nestingDepth - 1);
+        // Validate all levels were created
+        var missingLevels = new List<int>();
+        for (int level = 1; level < nestingDepth; level++)
+        {
+            if (!_nestedContainersByLevel.TryGetValue(level, out var elements) || elements.Count == 0)
+            {
+                missingLevels.Add(level);
+            }
+        }
+
+        if (missingLevels.Count > 0)
+        {
+            Logger.LogWarning("Nested container structure is incomplete. Missing levels: {MissingLevels}",
+                string.Join(", ", missingLevels));
+        }
+        else
+        {
+            Logger.LogInformation("Created nested container elements for {Levels} levels (all levels complete)", nestingDepth - 1);
+        }
     }
 
     /// <summary>
@@ -107,7 +131,7 @@ public partial class DocumentTypeSeeder
         var editor = _propertyEditors[Constants.PropertyEditors.Aliases.BlockList];
         if (editor == null) return null;
 
-        var prefix = GetPrefix("datatype");
+        var prefix = GetPrefix(PrefixType.DataType);
 
         try
         {
@@ -141,7 +165,7 @@ public partial class DocumentTypeSeeder
 
     private void CreateElementTypes(ComplexityConfig config, CancellationToken cancellationToken)
     {
-        var prefix = GetPrefix("elementtype");
+        var prefix = GetPrefix(PrefixType.ElementType);
         int totalCreated = 0;
 
         // Simple (3 properties, 1 tab)
@@ -151,7 +175,7 @@ public partial class DocumentTypeSeeder
             try
             {
                 var elementType = CreateElementType($"{prefix}Simple{i}", $"Test Element Simple {i}", "simple");
-                Context.ElementTypes.Add(elementType);
+                Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
             }
@@ -169,7 +193,7 @@ public partial class DocumentTypeSeeder
             try
             {
                 var elementType = CreateElementType($"{prefix}Medium{i}", $"Test Element Medium {i}", "medium");
-                Context.ElementTypes.Add(elementType);
+                Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
             }
@@ -187,7 +211,7 @@ public partial class DocumentTypeSeeder
             try
             {
                 var elementType = CreateElementType($"{prefix}Complex{i}", $"Test Element Complex {i}", "complex");
-                Context.ElementTypes.Add(elementType);
+                Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
             }

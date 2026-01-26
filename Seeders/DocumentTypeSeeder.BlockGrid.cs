@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Partial class containing Block Grid data type creation logic.
@@ -20,7 +22,7 @@ public partial class DocumentTypeSeeder
             return blockGridDataTypes;
         }
 
-        var prefix = GetPrefix("datatype");
+        var prefix = GetPrefix(PrefixType.DataType);
 
         for (int i = 0; i < count; i++)
         {
@@ -35,26 +37,33 @@ public partial class DocumentTypeSeeder
                     DatabaseType = ValueStorageType.Ntext
                 };
 
-                // Add up to 30 blocks (cycling through element types)
+                // Add up to MaxBlocksPerEditor blocks (cycling through element types)
                 var blocks = new List<BlockGridConfiguration.BlockGridBlockConfiguration>();
+                var maxBlocks = Config.DocumentTypes.MaxBlocksPerEditor;
+
+                // Track which keys are container elements (for area configuration)
+                var containerKeys = new HashSet<Guid>();
 
                 // Add level 1 container elements first (if nested containers exist)
+                // Containers: AllowAtRoot = true (can be placed at grid root), AllowInAreas = false (they contain areas, not go inside them)
                 if (_nestedContainersByLevel.TryGetValue(1, out var level1Containers))
                 {
                     foreach (var container in level1Containers)
                     {
+                        containerKeys.Add(container.Key);
                         blocks.Add(new BlockGridConfiguration.BlockGridBlockConfiguration
                         {
                             ContentElementTypeKey = container.Key,
                             Label = container.Name,
                             AllowAtRoot = true,
-                            AllowInAreas = true
+                            AllowInAreas = false // Containers shouldn't go inside areas, they define areas
                         });
                     }
                 }
 
-                // Add remaining element types up to 30 total
-                for (int j = 0; j < 30 - blocks.Count && j < Context.ElementTypes.Count; j++)
+                // Add remaining element types up to maxBlocks total
+                // Regular blocks: AllowAtRoot = true (can be at root), AllowInAreas = true (can go inside container areas)
+                for (int j = 0; j < maxBlocks - blocks.Count && j < Context.ElementTypes.Count; j++)
                 {
                     var elementType = Context.ElementTypes[j % Context.ElementTypes.Count];
                     // Skip if already added as container
@@ -65,14 +74,14 @@ public partial class DocumentTypeSeeder
                         ContentElementTypeKey = elementType.Key,
                         Label = elementType.Name,
                         AllowAtRoot = true,
-                        AllowInAreas = true
+                        AllowInAreas = true // Regular blocks can go inside areas
                     });
                 }
 
                 dataType.Configuration = new BlockGridConfiguration
                 {
                     Blocks = blocks.ToArray(),
-                    GridColumns = 12
+                    GridColumns = SeederConstants.DefaultGridColumns
                 };
 
                 _dataTypeService.Save(dataType);

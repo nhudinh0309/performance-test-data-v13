@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
@@ -20,12 +21,13 @@ public class DictionarySeeder : BaseSeeder<DictionarySeeder>
     /// </summary>
     public DictionarySeeder(
         ILocalizationService localizationService,
+        IScopeProvider scopeProvider,
         ILogger<DictionarySeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _localizationService = localizationService;
     }
@@ -43,7 +45,7 @@ public class DictionarySeeder : BaseSeeder<DictionarySeeder>
     protected override bool IsAlreadySeeded()
     {
         // Check if we have any root dictionary items with our prefix
-        var prefix = GetPrefix("dictionary");
+        var prefix = GetPrefix(PrefixType.Dictionary);
         var roots = _localizationService.GetRootDictionaryItems();
         return roots?.Any(r => r.ItemKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) == true;
     }
@@ -54,21 +56,31 @@ public class DictionarySeeder : BaseSeeder<DictionarySeeder>
         // Ensure we have languages loaded
         if (Context.Languages.Count == 0)
         {
-            Context.Languages = _localizationService.GetAllLanguages().ToList();
+            Context.SetLanguages(_localizationService.GetAllLanguages());
         }
 
         var langs = Context.Languages;
         if (langs.Count == 0)
         {
-            Logger.LogWarning("No languages available. Skipping dictionary seeding.");
+            Logger.LogWarning("No languages available. Dictionary items require at least one language for translations. Skipping dictionary seeding.");
             return Task.CompletedTask;
         }
+
+        Logger.LogDebug("Creating dictionary items with translations for {Count} languages", langs.Count);
 
         var rootFolders = Config.Dictionary.RootFolders;
         var sectionsPerRoot = Config.Dictionary.SectionsPerRoot;
         var itemsPerSection = Config.Dictionary.ItemsPerSection;
         var totalTarget = Config.Dictionary.TotalItems;
-        var prefix = GetPrefix("dictionary");
+        var prefix = GetPrefix(PrefixType.Dictionary);
+
+        if (IsDryRun)
+        {
+            Logger.LogInformation("[DRY-RUN] Would create {Total} dictionary items: {Roots} roots × {Sections} sections × {Items} items",
+                totalTarget, rootFolders, sectionsPerRoot, itemsPerSection);
+            Logger.LogInformation("[DRY-RUN] Each item would have {Count} translations", langs.Count);
+            return Task.CompletedTask;
+        }
 
         int totalCreated = 0;
         int rootCreated = 0;
@@ -79,6 +91,9 @@ public class DictionarySeeder : BaseSeeder<DictionarySeeder>
 
             try
             {
+                // Use a scope per root folder for batching
+                using var scope = CreateScopedBatch();
+
                 var rootKey = $"{prefix}Root_{i}";
                 var root = _localizationService.CreateDictionaryItemWithIdentity(rootKey, null);
                 _localizationService.Save(root);
@@ -113,6 +128,7 @@ public class DictionarySeeder : BaseSeeder<DictionarySeeder>
                     }
                 }
 
+                scope.Complete();
                 LogProgress(rootCreated, rootFolders, "root folders");
             }
             catch (Exception ex)

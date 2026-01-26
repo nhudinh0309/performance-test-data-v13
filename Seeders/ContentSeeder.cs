@@ -8,8 +8,10 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
+using static Umbraco.Community.PerformanceTestDataSeeder.Infrastructure.SeederConstants;
 
 /// <summary>
 /// Seeds content nodes with hierarchical structure.
@@ -23,6 +25,28 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly ILocalizationService _localizationService;
     private readonly IDomainService _domainService;
 
+    // Performance caches to avoid repeated lookups (cleared at start of each seeding run)
+    private readonly Dictionary<int, IContentType> _contentTypeCache = new();
+    private readonly Dictionary<Guid, IContentType?> _contentTypeByKeyCache = new();
+    private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockListConfiguration?> _blockListConfigCache = new();
+    private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockGridConfiguration?> _blockGridConfigCache = new();
+
+    // Batch publishing: tracks content items pending publication
+    private readonly List<(IContent Content, bool IsVariant)> _pendingPublishContent = new();
+
+    /// <summary>
+    /// Clears all internal caches. Called at the start of seeding to ensure fresh data.
+    /// </summary>
+    private void ClearCaches()
+    {
+        _contentTypeCache.Clear();
+        _contentTypeByKeyCache.Clear();
+        _blockListConfigCache.Clear();
+        _blockGridConfigCache.Clear();
+        _pendingPublishContent.Clear();
+        Logger.LogDebug("Cleared ContentSeeder caches");
+    }
+
     /// <summary>
     /// Creates a new ContentSeeder instance.
     /// </summary>
@@ -32,12 +56,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         IDataTypeService dataTypeService,
         ILocalizationService localizationService,
         IDomainService domainService,
+        IScopeProvider scopeProvider,
         ILogger<ContentSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _contentService = contentService;
         _contentTypeService = contentTypeService;
@@ -58,7 +83,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     /// <inheritdoc />
     protected override bool IsAlreadySeeded()
     {
-        var prefix = GetPrefix("content");
+        var prefix = GetPrefix(PrefixType.Content);
         var rootContent = _contentService.GetRootContent();
         return rootContent.Any(c => c.Name?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
@@ -66,6 +91,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     /// <inheritdoc />
     protected override Task SeedAsync(CancellationToken cancellationToken)
     {
+        // Clear caches to ensure fresh data (prevents stale cache if run multiple times)
+        ClearCaches();
+
         // Load document types if not already cached
         LoadDocumentTypesIfNeeded();
 
@@ -95,18 +123,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (Context.SimpleDocTypes.Count > 0) return;
 
         var allTypes = _contentTypeService.GetAll().ToList();
-        var variantPrefix = GetPrefix("variantdoctype");
-        var invariantPrefix = GetPrefix("invariantdoctype");
+        var variantPrefix = GetPrefix(PrefixType.VariantDocType);
+        var invariantPrefix = GetPrefix(PrefixType.InvariantDocType);
 
-        Context.SimpleDocTypes.AddRange(allTypes.Where(t =>
+        Context.AddSimpleDocTypes(allTypes.Where(t =>
             t.Alias.StartsWith($"{variantPrefix}Simple", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Simple", StringComparison.OrdinalIgnoreCase)));
 
-        Context.MediumDocTypes.AddRange(allTypes.Where(t =>
+        Context.AddMediumDocTypes(allTypes.Where(t =>
             t.Alias.StartsWith($"{variantPrefix}Medium", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Medium", StringComparison.OrdinalIgnoreCase)));
 
-        Context.ComplexDocTypes.AddRange(allTypes.Where(t =>
+        Context.AddComplexDocTypes(allTypes.Where(t =>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
@@ -117,7 +145,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private void LoadLanguagesIfNeeded()
     {
         if (Context.Languages.Count > 0) return;
-        Context.Languages = _localizationService.GetAllLanguages().ToList();
+        Context.SetLanguages(_localizationService.GetAllLanguages());
     }
 
     private void LoadMediaItemsIfNeeded()
@@ -131,7 +159,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private void CreateContentTree(CancellationToken cancellationToken)
     {
         var contentConfig = Config.Content;
-        var prefix = GetPrefix("content");
+        var prefix = GetPrefix(PrefixType.Content);
 
         int totalCreated = 0;
         int targetTotal = contentConfig.TotalTarget;
@@ -144,84 +172,173 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         int mediumCreated = 0;
         int complexCreated = 0;
 
-        // Create root sections
-        for (int section = 1; section <= contentConfig.RootSections && totalCreated < targetTotal; section++)
+        // DryRun summary tracking
+        if (IsDryRun)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            Logger.LogInformation("[DRY-RUN] Would create content tree with target: {Target} items", targetTotal);
+            Logger.LogInformation("[DRY-RUN] Distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
+                contentConfig.SimplePercent, contentConfig.MediumPercent, contentConfig.ComplexPercent);
+        }
 
-            try
+        int batchCount = 0;
+        IScope? currentScope = null;
+
+        try
+        {
+            // Create root sections
+            for (int section = 1; section <= contentConfig.RootSections && totalCreated < targetTotal; section++)
             {
-                var sectionDocType = GetRandomDocType("simple");
-                var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple");
-                Context.CreatedContent.Add(sectionContent);
-                simpleCreated++;
-                totalCreated++;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                // Each section has categories
-                for (int cat = 1; cat <= contentConfig.CategoriesPerSection && totalCreated < targetTotal; cat++)
+                try
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    // Start new batch scope if needed (only when persisting)
+                    if (currentScope == null && ShouldPersist)
+                    {
+                        currentScope = CreateScopedBatch();
+                        batchCount = 0;
+                    }
 
-                    var catDocType = GetRandomDocType("simple");
-                    var catContent = CreateContent($"Category_{section}_{cat}", sectionContent.Id, catDocType, "simple");
-                    Context.CreatedContent.Add(catContent);
+                    var sectionDocType = GetRandomDocType("simple");
+                    var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple");
+                    if (sectionContent != null) Context.AddContent(sectionContent);
                     simpleCreated++;
                     totalCreated++;
+                    batchCount++;
 
-                    // Each category has pages
-                    for (int page = 1; page <= contentConfig.PagesPerCategory && totalCreated < targetTotal; page++)
+                    // Each section has categories
+                    for (int cat = 1; cat <= contentConfig.CategoriesPerSection && totalCreated < targetTotal; cat++)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        // Determine complexity based on remaining targets and current distribution
-                        var (complexity, docType) = DetermineComplexity(
-                            simpleCreated, mediumCreated, complexCreated,
-                            simpleTarget, mediumTarget, complexTarget);
-
-                        switch (complexity)
-                        {
-                            case "simple": simpleCreated++; break;
-                            case "medium": mediumCreated++; break;
-                            case "complex": complexCreated++; break;
-                        }
-
-                        var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catContent.Id, docType, complexity);
-                        Context.CreatedContent.Add(pageContent);
+                        var catDocType = GetRandomDocType("simple");
+                        var parentId = sectionContent?.Id ?? -1;
+                        var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple");
+                        if (catContent != null) Context.AddContent(catContent);
+                        simpleCreated++;
                         totalCreated++;
+                        batchCount++;
 
-                        // Some pages have detail children (Level 4)
-                        if (page % 5 == 0 && totalCreated < targetTotal)
+                        // Check if we should commit the batch (with proper error handling)
+                        if (ShouldPersist && batchCount >= Options.BatchSize)
                         {
-                            int detailsPerPage = Math.Min(8, targetTotal - totalCreated);
-                            for (int detail = 1; detail <= detailsPerPage && totalCreated < targetTotal; detail++)
-                            {
-                                cancellationToken.ThrowIfCancellationRequested();
-
-                                var detailDocType = GetRandomDocType("simple");
-                                var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                    pageContent.Id, detailDocType, "simple");
-                                Context.CreatedContent.Add(detailContent);
-                                simpleCreated++;
-                                totalCreated++;
-                            }
+                            CommitAndResetBatch(ref currentScope, ref batchCount);
+                            PublishPendingContentBatch(); // Batch publish if threshold reached
                         }
 
-                        LogProgress(totalCreated, targetTotal, "content nodes");
-                    }
-                }
+                        // Each category has pages
+                        for (int page = 1; page <= contentConfig.PagesPerCategory && totalCreated < targetTotal; page++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
 
-                Logger.LogInformation("Completed root section {Section}/{TotalSections} - Total content created: {Created}/{Target}",
-                    section, contentConfig.RootSections, totalCreated, targetTotal);
+                            // Determine complexity based on remaining targets and current distribution
+                            var (complexity, docType) = DetermineComplexity(
+                                simpleCreated, mediumCreated, complexCreated,
+                                simpleTarget, mediumTarget, complexTarget);
+
+                            switch (complexity)
+                            {
+                                case "simple": simpleCreated++; break;
+                                case "medium": mediumCreated++; break;
+                                case "complex": complexCreated++; break;
+                            }
+
+                            var catParentId = catContent?.Id ?? -1;
+                            var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catParentId, docType, complexity);
+                            if (pageContent != null) Context.AddContent(pageContent);
+                            totalCreated++;
+                            batchCount++;
+
+                            // Check if we should commit the batch
+                            if (ShouldPersist && batchCount >= Options.BatchSize)
+                            {
+                                CommitAndResetBatch(ref currentScope, ref batchCount);
+                                PublishPendingContentBatch(); // Batch publish if threshold reached
+                            }
+
+                            // Some pages have detail children (Level 4)
+                            if (page % 5 == 0 && totalCreated < targetTotal)
+                            {
+                                int detailsPerPage = Math.Min(8, targetTotal - totalCreated);
+                                for (int detail = 1; detail <= detailsPerPage && totalCreated < targetTotal; detail++)
+                                {
+                                    cancellationToken.ThrowIfCancellationRequested();
+
+                                    var detailDocType = GetRandomDocType("simple");
+                                    var pageParentId = pageContent?.Id ?? -1;
+                                    var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
+                                        pageParentId, detailDocType, "simple");
+                                    if (detailContent != null) Context.AddContent(detailContent);
+                                    simpleCreated++;
+                                    totalCreated++;
+                                    batchCount++;
+
+                                    // Check if we should commit the batch
+                                    if (ShouldPersist && batchCount >= Options.BatchSize)
+                                    {
+                                        CommitAndResetBatch(ref currentScope, ref batchCount);
+                                        PublishPendingContentBatch(); // Batch publish if threshold reached
+                                    }
+                                }
+                            }
+
+                            LogProgress(totalCreated, targetTotal, "content nodes");
+                        }
+                    }
+
+                    Logger.LogInformation("Completed root section {Section}/{TotalSections} - Total content created: {Created}/{Target}",
+                        section, contentConfig.RootSections, totalCreated, targetTotal);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to create content for section {Section}", section);
+                    if (Options.StopOnError) throw;
+                }
             }
-            catch (Exception ex)
+
+            // Complete any remaining batch
+            if (currentScope != null && batchCount > 0)
             {
-                Logger.LogWarning(ex, "Failed to create content for section {Section}", section);
-                if (Options.StopOnError) throw;
+                currentScope.Complete();
             }
+        }
+        finally
+        {
+            currentScope?.Dispose();
+        }
+
+        // Publish any remaining pending content
+        if (_pendingPublishContent.Count > 0)
+        {
+            Logger.LogInformation("Publishing remaining {Count} content items...", _pendingPublishContent.Count);
+            PublishPendingContentBatch(force: true);
         }
 
         Logger.LogInformation("Final count - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Total: {Total}",
             simpleCreated, mediumCreated, complexCreated, totalCreated);
+    }
+
+    /// <summary>
+    /// Safely commits the current batch and creates a new scope.
+    /// Ensures proper disposal even if scope creation fails.
+    /// </summary>
+    private void CommitAndResetBatch(ref IScope? currentScope, ref int batchCount)
+    {
+        if (currentScope == null) return;
+
+        try
+        {
+            currentScope.Complete();
+        }
+        finally
+        {
+            currentScope.Dispose();
+            currentScope = null;
+        }
+
+        // Create new scope (if this fails, currentScope is already null and cleaned up)
+        currentScope = CreateScopedBatch();
+        batchCount = 0;
     }
 
     /// <summary>
@@ -238,9 +355,14 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         int complexRemaining = Math.Max(0, complexTarget - complexCreated);
         int totalRemaining = simpleRemaining + mediumRemaining + complexRemaining;
 
-        // If all targets met, default to simple
+        // If all targets met, rotate through available types based on what has doc types
         if (totalRemaining == 0)
         {
+            // Prefer complex, then medium, then simple (to avoid over-creating simple)
+            if (Context.ComplexDocTypes.Count > 0)
+                return ("complex", GetRandomDocType("complex"));
+            if (Context.MediumDocTypes.Count > 0)
+                return ("medium", GetRandomDocType("medium"));
             return ("simple", GetRandomDocType("simple"));
         }
 
@@ -281,11 +403,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         };
     }
 
-    private IContent CreateContent(string name, int parentId, IContentType docType, string complexity)
+    private IContent? CreateContent(string name, int parentId, IContentType docType, string complexity)
     {
+        // DryRun mode - log what would be created but don't persist
+        if (IsDryRun)
+        {
+            LogDryRun("Content", name, $"type={docType.Alias}, complexity={complexity}, parent={parentId}");
+            return null;
+        }
+
         var content = _contentService.Create(name, parentId, docType);
         var isVariant = docType.Variations.HasFlag(ContentVariation.Culture);
         var isRootContent = parentId == -1;
+        var useBatchPublishing = Options.PublishContent && Options.PublishBatchSize > 0;
 
         if (isVariant)
         {
@@ -298,7 +428,28 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 SetPropertiesForCulture(content, complexity, culture);
             }
 
-            _contentService.Save(content);
+            // Save content (publish later if batch mode, or now if immediate mode)
+            if (Options.PublishContent && !useBatchPublishing)
+            {
+                // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
+                var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
+                var result = _contentService.SaveAndPublish(content, cultures);
+                if (!result.Success)
+                {
+                    Logger.LogWarning("Failed to publish variant content {Name}: {Messages}",
+                        content.Name ?? "Unknown", string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                }
+            }
+            else
+            {
+                // Save without publishing (will batch publish later if enabled)
+                _contentService.Save(content);
+
+                if (useBatchPublishing)
+                {
+                    _pendingPublishContent.Add((content, true));
+                }
+            }
 
             // Assign domain to root content
             if (isRootContent)
@@ -310,10 +461,95 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             // For invariant content
             SetPropertiesForCulture(content, complexity, null);
-            _contentService.Save(content);
+
+            if (Options.PublishContent && !useBatchPublishing)
+            {
+                // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
+                var result = _contentService.SaveAndPublish(content);
+                if (!result.Success)
+                {
+                    Logger.LogWarning("Failed to publish invariant content {Name}: {Messages}",
+                        content.Name ?? "Unknown", string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                }
+            }
+            else
+            {
+                // Save without publishing (will batch publish later if enabled)
+                _contentService.Save(content);
+
+                if (useBatchPublishing)
+                {
+                    _pendingPublishContent.Add((content, false));
+                }
+            }
         }
 
         return content;
+    }
+
+    /// <summary>
+    /// Publishes pending content items in batches for better performance.
+    /// </summary>
+    /// <param name="force">If true, publishes all remaining items regardless of batch size.</param>
+    private void PublishPendingContentBatch(bool force = false)
+    {
+        if (!Options.PublishContent || Options.PublishBatchSize <= 0)
+            return;
+
+        if (!force && _pendingPublishContent.Count < Options.PublishBatchSize)
+            return;
+
+        if (_pendingPublishContent.Count == 0)
+            return;
+
+        var itemsToPublish = force
+            ? _pendingPublishContent.ToList()
+            : _pendingPublishContent.Take(Options.PublishBatchSize).ToList();
+
+        var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
+        int successCount = 0;
+        int failCount = 0;
+
+        using var scope = CreateScopedBatch();
+
+        foreach (var (content, isVariant) in itemsToPublish)
+        {
+            try
+            {
+                var result = isVariant
+                    ? _contentService.SaveAndPublish(content, cultures)
+                    : _contentService.SaveAndPublish(content);
+
+                if (result.Success)
+                {
+                    successCount++;
+                }
+                else
+                {
+                    failCount++;
+                    Logger.LogDebug("Failed to publish content {Name}: {Messages}",
+                        content.Name ?? "Unknown",
+                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                }
+            }
+            catch (Exception ex)
+            {
+                failCount++;
+                Logger.LogWarning(ex, "Exception publishing content {Name}", content.Name ?? "Unknown");
+                if (Options.StopOnError) throw;
+            }
+        }
+
+        scope.Complete();
+
+        // Remove published items from pending list
+        foreach (var item in itemsToPublish)
+        {
+            _pendingPublishContent.Remove(item);
+        }
+
+        Logger.LogDebug("Batch published {Success} content items ({Failed} failed, {Remaining} remaining)",
+            successCount, failCount, _pendingPublishContent.Count);
     }
 
     private void SetPropertiesForCulture(IContent content, string complexity, string? culture)
@@ -334,14 +570,22 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
     private void AssignDomainsToContent(IContent content)
     {
+        // Skip domain assignment if configured
+        if (Options.SkipContentDomains)
+        {
+            Logger.LogDebug("Skipping domain assignment for '{Name}' (SkipContentDomains=true)", content.Name);
+            return;
+        }
+
         var existingDomains = _domainService.GetAssignedDomains(content.Id, false).ToList();
+        var domainSuffix = Options.DomainSuffix;
 
         foreach (var language in Context.Languages)
         {
             if (existingDomains.Any(d => d.LanguageIsoCode == language.IsoCode))
                 continue;
 
-            var domainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.localhost";
+            var domainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}";
 
             var domain = new UmbracoDomain(domainName)
             {
@@ -352,8 +596,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             _domainService.Save(domain);
         }
 
-        Logger.LogDebug("Assigned {Count} domains to root content '{Name}' (ID: {Id})",
-            Context.Languages.Count, content.Name, content.Id);
+        Logger.LogDebug("Assigned {Count} domains to root content '{Name}' (ID: {Id}) with suffix '{Suffix}'",
+            Context.Languages.Count, content.Name, content.Id, domainSuffix);
     }
 
     private void SetSimpleProperties(IContent content, string? culture)
@@ -464,11 +708,20 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    /// <summary>
+    /// Generates the correct JSON format for Umbraco MediaPicker3.
+    /// Format: [{ "key": "guid", "mediaKey": "media-guid" }]
+    /// </summary>
     private static string GenerateMediaPickerValue(IMedia media)
     {
+        // MediaPicker3 expects an array of objects with key and mediaKey properties
         var mediaPickerItems = new[]
         {
-            new { key = Guid.NewGuid(), mediaKey = media.Key }
+            new
+            {
+                key = Guid.NewGuid().ToString(),
+                mediaKey = media.Key.ToString()
+            }
         };
         return JsonSerializer.Serialize(mediaPickerItems, JsonOptions);
     }
@@ -572,8 +825,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 layoutItems.Add(new
                 {
                     contentUdi = $"umb://element/{contentUdi}",
-                    columnSpan = 12,
-                    rowSpan = 1,
+                    columnSpan = DefaultGridColumnSpan,
+                    rowSpan = DefaultGridRowSpan,
                     areas = Array.Empty<object>()
                 });
             }
@@ -593,8 +846,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             layoutItems.Add(new
             {
                 contentUdi = $"umb://element/{contentUdi}",
-                columnSpan = 12,
-                rowSpan = 1,
+                columnSpan = DefaultGridColumnSpan,
+                rowSpan = DefaultGridRowSpan,
                 areas = Array.Empty<object>()
             });
         }
@@ -638,10 +891,27 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
     /// <summary>
     /// Builds content data for nested block elements, recursively generating child blocks.
+    /// Uses configured NestingDepth from DocumentTypes configuration.
     /// </summary>
     private Dictionary<string, object> BuildNestedBlockContentDataObject(
-        IContentType elementType, Guid elementTypeKey, string contentUdi, int currentDepth, int maxDepth = 10)
+        IContentType elementType, Guid elementTypeKey, string contentUdi, int currentDepth, int? maxDepth = null)
     {
+        // Use configured NestingDepth if not explicitly provided
+        var effectiveMaxDepth = maxDepth ?? Config.DocumentTypes.NestingDepth;
+
+        // Explicit recursion guard to prevent stack overflow
+        const int absoluteMaxDepth = 50;
+        if (currentDepth > effectiveMaxDepth || currentDepth > absoluteMaxDepth)
+        {
+            Logger.LogDebug("Recursion depth limit reached ({CurrentDepth}/{MaxDepth}), stopping nested block generation",
+                currentDepth, effectiveMaxDepth);
+            return new Dictionary<string, object>
+            {
+                ["contentTypeKey"] = elementTypeKey.ToString(),
+                ["udi"] = $"umb://element/{contentUdi}"
+            };
+        }
+
         var properties = new Dictionary<string, object>
         {
             ["contentTypeKey"] = elementTypeKey.ToString(),
@@ -654,9 +924,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             foreach (var propType in group.PropertyTypes)
             {
                 // Handle nestedBlocks property specially - generate nested content
-                if (propType.Alias == "nestedBlocks" && currentDepth < maxDepth)
+                if (propType.Alias == "nestedBlocks" && currentDepth < effectiveMaxDepth)
                 {
-                    var nestedBlockListJson = GenerateNestedBlockListJson(propType, currentDepth + 1, maxDepth);
+                    var nestedBlockListJson = GenerateNestedBlockListJson(propType, currentDepth + 1, effectiveMaxDepth);
                     if (!string.IsNullOrEmpty(nestedBlockListJson))
                         properties[propType.Alias] = nestedBlockListJson;
                 }
@@ -677,6 +947,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     /// </summary>
     private string? GenerateNestedBlockListJson(IPropertyType propType, int currentDepth, int maxDepth)
     {
+        // Explicit recursion guard
+        const int absoluteMaxDepth = 50;
+        if (currentDepth > maxDepth || currentDepth > absoluteMaxDepth)
+        {
+            return null;
+        }
+
         // Get the BlockList configuration for this property
         if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
         {
@@ -757,32 +1034,111 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             Constants.PropertyEditors.Aliases.Boolean => "1",
             Constants.PropertyEditors.Aliases.Label => string.Empty,
             Constants.PropertyEditors.Aliases.Integer => Context.Faker.Random.Int(1, 100),
+            Constants.PropertyEditors.Aliases.MediaPicker3 => GenerateMediaPickerValueForBlock(),
+            Constants.PropertyEditors.Aliases.ContentPicker => GenerateContentPickerValueForBlock(),
             _ => string.Empty
         };
     }
 
+    private object? GenerateMediaPickerValueForBlock()
+    {
+        if (Context.MediaItems.Count == 0) return null;
+
+        var randomMedia = Context.MediaItems[Context.Random.Next(Context.MediaItems.Count)];
+        return GenerateMediaPickerValue(randomMedia);
+    }
+
+    private object? GenerateContentPickerValueForBlock()
+    {
+        if (Context.CreatedContent.Count == 0) return null;
+
+        var randomContent = Context.CreatedContent[Context.Random.Next(Context.CreatedContent.Count)];
+        return Udi.Create(Constants.UdiEntityType.Document, randomContent.Key).ToString();
+    }
+
+    /// <summary>
+    /// Gets content type with caching to avoid repeated DB lookups.
+    /// </summary>
+    private IContentType? GetCachedContentType(int contentTypeId)
+    {
+        if (_contentTypeCache.TryGetValue(contentTypeId, out var cached))
+            return cached;
+
+        var contentType = _contentTypeService.Get(contentTypeId);
+        if (contentType != null)
+            _contentTypeCache[contentTypeId] = contentType;
+
+        return contentType;
+    }
+
     private BlockListConfiguration? GetBlockListConfiguration(IContent content, string propertyAlias)
     {
-        var contentType = _contentTypeService.Get(content.ContentTypeId);
-        if (contentType == null) return null;
+        var cacheKey = (content.ContentTypeId, propertyAlias);
+
+        // Check cache first
+        if (_blockListConfigCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var contentType = GetCachedContentType(content.ContentTypeId);
+        if (contentType == null)
+        {
+            _blockListConfigCache[cacheKey] = null;
+            return null;
+        }
 
         var propertyType = FindPropertyType(contentType, propertyAlias);
-        if (propertyType == null) return null;
+        if (propertyType == null)
+        {
+            _blockListConfigCache[cacheKey] = null;
+            return null;
+        }
 
-        var dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
-        return dataType?.Configuration as BlockListConfiguration;
+        // Use data type cache from context
+        if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
+        {
+            dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
+            if (dataType != null)
+                Context.DataTypeCache[propertyType.DataTypeId] = dataType;
+        }
+
+        var config = dataType?.Configuration as BlockListConfiguration;
+        _blockListConfigCache[cacheKey] = config;
+        return config;
     }
 
     private BlockGridConfiguration? GetBlockGridConfiguration(IContent content, string propertyAlias)
     {
-        var contentType = _contentTypeService.Get(content.ContentTypeId);
-        if (contentType == null) return null;
+        var cacheKey = (content.ContentTypeId, propertyAlias);
+
+        // Check cache first
+        if (_blockGridConfigCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        var contentType = GetCachedContentType(content.ContentTypeId);
+        if (contentType == null)
+        {
+            _blockGridConfigCache[cacheKey] = null;
+            return null;
+        }
 
         var propertyType = FindPropertyType(contentType, propertyAlias);
-        if (propertyType == null) return null;
+        if (propertyType == null)
+        {
+            _blockGridConfigCache[cacheKey] = null;
+            return null;
+        }
 
-        var dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
-        return dataType?.Configuration as BlockGridConfiguration;
+        // Use data type cache from context
+        if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
+        {
+            dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
+            if (dataType != null)
+                Context.DataTypeCache[propertyType.DataTypeId] = dataType;
+        }
+
+        var config = dataType?.Configuration as BlockGridConfiguration;
+        _blockGridConfigCache[cacheKey] = config;
+        return config;
     }
 
     private static IPropertyType? FindPropertyType(IContentType contentType, string alias)
@@ -795,51 +1151,51 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         return contentType.PropertyTypes.FirstOrDefault(p => p.Alias == alias);
     }
 
-    private BlockListConfiguration.BlockConfiguration? FindBlockByComplexity(
-        BlockListConfiguration.BlockConfiguration[] blocks, string complexity)
+    #region Block Finding Helpers
+
+    /// <summary>
+    /// Gets content type by key with caching to avoid repeated DB lookups.
+    /// </summary>
+    private IContentType? GetCachedContentTypeByKey(Guid key)
+    {
+        if (_contentTypeByKeyCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var contentType = _contentTypeService.Get(key);
+        _contentTypeByKeyCache[key] = contentType;
+
+        return contentType;
+    }
+
+    /// <summary>
+    /// Generic helper to find a block by matching its element type alias against a pattern.
+    /// </summary>
+    private T? FindBlockByAlias<T>(T[] blocks, Func<T, Guid> keySelector, string aliasPattern) where T : class
     {
         foreach (var block in blocks)
         {
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
-            if (elementType?.Alias.Contains(complexity, StringComparison.OrdinalIgnoreCase) == true)
+            var elementType = GetCachedContentTypeByKey(keySelector(block));
+            if (elementType?.Alias.Contains(aliasPattern, StringComparison.OrdinalIgnoreCase) == true)
                 return block;
         }
         return null;
     }
+
+    private BlockListConfiguration.BlockConfiguration? FindBlockByComplexity(
+        BlockListConfiguration.BlockConfiguration[] blocks, string complexity)
+        => FindBlockByAlias(blocks, b => b.ContentElementTypeKey, complexity);
 
     private BlockListConfiguration.BlockConfiguration? FindNestedBlockElement(
         BlockListConfiguration.BlockConfiguration[] blocks)
-    {
-        foreach (var block in blocks)
-        {
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
-            if (elementType?.Alias.Contains("NestedBlock_Depth", StringComparison.OrdinalIgnoreCase) == true)
-                return block;
-        }
-        return null;
-    }
+        => FindBlockByAlias(blocks, b => b.ContentElementTypeKey, "NestedBlock_Depth");
 
     private BlockGridConfiguration.BlockGridBlockConfiguration? FindBlockGridByComplexity(
         BlockGridConfiguration.BlockGridBlockConfiguration[] blocks, string complexity)
-    {
-        foreach (var block in blocks)
-        {
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
-            if (elementType?.Alias.Contains(complexity, StringComparison.OrdinalIgnoreCase) == true)
-                return block;
-        }
-        return null;
-    }
+        => FindBlockByAlias(blocks, b => b.ContentElementTypeKey, complexity);
 
     private BlockGridConfiguration.BlockGridBlockConfiguration? FindNestedBlockGridElement(
         BlockGridConfiguration.BlockGridBlockConfiguration[] blocks)
-    {
-        foreach (var block in blocks)
-        {
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
-            if (elementType?.Alias.Contains("NestedBlock_Depth", StringComparison.OrdinalIgnoreCase) == true)
-                return block;
-        }
-        return null;
-    }
+        => FindBlockByAlias(blocks, b => b.ContentElementTypeKey, "NestedBlock_Depth");
+
+    #endregion
 }

@@ -8,6 +8,7 @@ using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
@@ -48,12 +49,13 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         PropertyEditorCollection propertyEditors,
         IConfigurationEditorJsonSerializer serializer,
         IShortStringHelper shortStringHelper,
+        IScopeProvider scopeProvider,
         ILogger<DocumentTypeSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _contentTypeService = contentTypeService;
         _dataTypeService = dataTypeService;
@@ -75,8 +77,8 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     /// <inheritdoc />
     protected override bool IsAlreadySeeded()
     {
-        var elementPrefix = GetPrefix("elementtype");
-        var variantPrefix = GetPrefix("variantdoctype");
+        var elementPrefix = GetPrefix(PrefixType.ElementType);
+        var variantPrefix = GetPrefix(PrefixType.VariantDocType);
         var existingTypes = _contentTypeService.GetAll();
         return existingTypes.Any(t =>
             t.Alias.StartsWith(elementPrefix, StringComparison.OrdinalIgnoreCase) ||
@@ -86,14 +88,41 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     /// <inheritdoc />
     protected override Task SeedAsync(CancellationToken cancellationToken)
     {
+        var docTypeConfig = Config.DocumentTypes;
+
+        if (IsDryRun)
+        {
+            var totalElements = docTypeConfig.ElementTypes.Simple + docTypeConfig.ElementTypes.Medium + docTypeConfig.ElementTypes.Complex;
+            var totalVariantDocs = docTypeConfig.VariantDocTypes.Simple + docTypeConfig.VariantDocTypes.Medium + docTypeConfig.VariantDocTypes.Complex;
+            var totalInvariantDocs = docTypeConfig.InvariantDocTypes.Simple + docTypeConfig.InvariantDocTypes.Medium + docTypeConfig.InvariantDocTypes.Complex;
+            Logger.LogInformation("[DRY-RUN] Would create Document Types with configuration:");
+            Logger.LogInformation("[DRY-RUN]   Element Types: {Simple} simple, {Medium} medium, {Complex} complex (total: {Total})",
+                docTypeConfig.ElementTypes.Simple, docTypeConfig.ElementTypes.Medium, docTypeConfig.ElementTypes.Complex, totalElements);
+            Logger.LogInformation("[DRY-RUN]   Nesting Depth: {Depth}", docTypeConfig.NestingDepth);
+            Logger.LogInformation("[DRY-RUN]   Block List: {Count} data types", docTypeConfig.BlockList);
+            Logger.LogInformation("[DRY-RUN]   Block Grid: {Count} data types", docTypeConfig.BlockGrid);
+            Logger.LogInformation("[DRY-RUN]   Variant Doc Types: {Simple} simple, {Medium} medium, {Complex} complex (total: {Total})",
+                docTypeConfig.VariantDocTypes.Simple, docTypeConfig.VariantDocTypes.Medium, docTypeConfig.VariantDocTypes.Complex, totalVariantDocs);
+            Logger.LogInformation("[DRY-RUN]   Invariant Doc Types: {Simple} simple, {Medium} medium, {Complex} complex (total: {Total})",
+                docTypeConfig.InvariantDocTypes.Simple, docTypeConfig.InvariantDocTypes.Medium, docTypeConfig.InvariantDocTypes.Complex, totalInvariantDocs);
+            // Still load built-in data types for validation
+            EnsureBuiltInDataTypesLoaded();
+            return Task.CompletedTask;
+        }
+
         // Ensure built-in data types are loaded
         EnsureBuiltInDataTypesLoaded();
 
-        var docTypeConfig = Config.DocumentTypes;
+        List<IDataType> blockListDataTypes;
+        List<IDataType> blockGridDataTypes;
 
         // Phase 1: Create Element Types (needed for Block List/Grid)
         Logger.LogInformation("Phase 1: Creating Element Types...");
-        CreateElementTypes(docTypeConfig.ElementTypes, cancellationToken);
+        using (var scope = CreateScopedBatch())
+        {
+            CreateElementTypes(docTypeConfig.ElementTypes, cancellationToken);
+            scope.Complete();
+        }
 
         // Cache element types by complexity for Block List/Grid creation
         CategorizeElementTypes();
@@ -102,28 +131,48 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         if (docTypeConfig.NestingDepth > 1)
         {
             Logger.LogInformation("Phase 2: Creating Nested Container Elements (depth: {Depth})...", docTypeConfig.NestingDepth);
-            CreateNestedContainerElements(docTypeConfig.NestingDepth, cancellationToken);
+            using (var scope = CreateScopedBatch())
+            {
+                CreateNestedContainerElements(docTypeConfig.NestingDepth, cancellationToken);
+                scope.Complete();
+            }
         }
 
         // Phase 3: Create Block List data types
         Logger.LogInformation("Phase 3: Creating Block List data types...");
-        var blockListDataTypes = CreateBlockListDataTypes(docTypeConfig.BlockList, cancellationToken);
+        using (var scope = CreateScopedBatch())
+        {
+            blockListDataTypes = CreateBlockListDataTypes(docTypeConfig.BlockList, cancellationToken);
+            scope.Complete();
+        }
 
         // Phase 4: Create Block Grid data types
         Logger.LogInformation("Phase 4: Creating Block Grid data types...");
-        var blockGridDataTypes = CreateBlockGridDataTypes(docTypeConfig.BlockGrid, cancellationToken);
+        using (var scope = CreateScopedBatch())
+        {
+            blockGridDataTypes = CreateBlockGridDataTypes(docTypeConfig.BlockGrid, cancellationToken);
+            scope.Complete();
+        }
 
         // Phase 5: Create Variant Document Types with Templates
         Logger.LogInformation("Phase 5: Creating Variant Document Types with Templates...");
-        CreateVariantDocumentTypes(docTypeConfig.VariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+        using (var scope = CreateScopedBatch())
+        {
+            CreateVariantDocumentTypes(docTypeConfig.VariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+            scope.Complete();
+        }
 
         // Phase 6: Create Invariant Document Types with Templates
         Logger.LogInformation("Phase 6: Creating Invariant Document Types with Templates...");
-        CreateInvariantDocumentTypes(docTypeConfig.InvariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+        using (var scope = CreateScopedBatch())
+        {
+            CreateInvariantDocumentTypes(docTypeConfig.InvariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+            scope.Complete();
+        }
 
         // Store block data types in context for ContentSeeder
-        Context.BlockListDataTypes.AddRange(blockListDataTypes);
-        Context.BlockGridDataTypes.AddRange(blockGridDataTypes);
+        Context.AddBlockListDataTypes(blockListDataTypes);
+        Context.AddBlockGridDataTypes(blockGridDataTypes);
 
         Logger.LogInformation(
             "Seeded {ElementCount} Element Types, {BlockListCount} Block List, {BlockGridCount} Block Grid, and {DocTypeCount} Document Types",
@@ -161,6 +210,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     /// <summary>
     /// Validates that all required built-in data types are loaded.
     /// Throws InvalidOperationException if any required type is missing.
+    /// Logs warnings for optional types that are missing.
     /// </summary>
     private void ValidateRequiredDataTypes()
     {
@@ -175,6 +225,25 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             throw new InvalidOperationException(
                 $"Required Umbraco data types not found: {string.Join(", ", missing)}. " +
                 "Ensure Umbraco is fully installed before running the seeder.");
+        }
+
+        // Log warnings for optional data types that are missing
+        // These will cause some properties to be skipped but won't break seeding
+        var optionalMissing = new List<string>();
+        if (Context.ContentPickerDataType == null)
+        {
+            optionalMissing.Add("ContentPicker");
+            Logger.LogWarning("ContentPicker data type not found. Content picker properties will be skipped on element types.");
+        }
+        if (Context.MediaPickerDataType == null)
+        {
+            optionalMissing.Add("MediaPicker3");
+            Logger.LogWarning("MediaPicker3 data type not found. Media picker properties will be skipped on element types.");
+        }
+        if (Context.LabelDataType == null)
+        {
+            optionalMissing.Add("Label");
+            Logger.LogDebug("Label data type not found. Label properties will be skipped.");
         }
     }
 
@@ -202,12 +271,40 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
 
     private void CategorizeElementTypes()
     {
-        _cachedSimpleElements = Context.ElementTypes.Where(e => e.Alias.Contains("Simple")).ToList();
-        _cachedMediumElements = Context.ElementTypes.Where(e => e.Alias.Contains("Medium")).ToList();
-        _cachedComplexElements = Context.ElementTypes.Where(e => e.Alias.Contains("Complex")).ToList();
+        // Use precise matching to avoid false positives (e.g., "VerySimple" matching "Simple")
+        // Element types are created with aliases like: {prefix}Simple{N}, {prefix}Medium{N}, {prefix}Complex{N}
+        // Also exclude nested container elements which have "Container" in the name
+        _cachedSimpleElements = Context.ElementTypes
+            .Where(e => IsComplexityMatch(e.Alias, "Simple") && !e.Alias.Contains("Container"))
+            .ToList();
+        _cachedMediumElements = Context.ElementTypes
+            .Where(e => IsComplexityMatch(e.Alias, "Medium") && !e.Alias.Contains("Container"))
+            .ToList();
+        _cachedComplexElements = Context.ElementTypes
+            .Where(e => IsComplexityMatch(e.Alias, "Complex") && !e.Alias.Contains("Container"))
+            .ToList();
 
         Logger.LogDebug("Categorized elements - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}",
             _cachedSimpleElements.Count, _cachedMediumElements.Count, _cachedComplexElements.Count);
+    }
+
+    /// <summary>
+    /// Checks if an alias matches a complexity level using precise matching.
+    /// Matches patterns like "testElementSimple1" or "prefixSimple_2".
+    /// </summary>
+    private static bool IsComplexityMatch(string alias, string complexity)
+    {
+        // Match: alias contains complexity followed by a digit or underscore+digit or end of string
+        // e.g., "testElementSimple1" matches "Simple", "prefix_Simple_1" matches "Simple"
+        var index = alias.IndexOf(complexity, StringComparison.OrdinalIgnoreCase);
+        if (index < 0) return false;
+
+        var afterComplexity = index + complexity.Length;
+        if (afterComplexity >= alias.Length) return true; // Ends with complexity
+
+        var nextChar = alias[afterComplexity];
+        // Valid if followed by digit, underscore, or nothing
+        return char.IsDigit(nextChar) || nextChar == '_';
     }
 
     #endregion

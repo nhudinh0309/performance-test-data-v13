@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
@@ -33,12 +34,13 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
     /// </summary>
     public LanguageSeeder(
         ILocalizationService localizationService,
+        IScopeProvider scopeProvider,
         ILogger<LanguageSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _localizationService = localizationService;
     }
@@ -79,37 +81,48 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
             return Task.CompletedTask;
         }
 
-        int created = 0;
-        foreach (var culture in culturesToCreate)
+        if (IsDryRun)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            Logger.LogInformation("[DRY-RUN] Would create {Count} languages: {Cultures}",
+                culturesToCreate.Count, string.Join(", ", culturesToCreate));
+            return Task.CompletedTask;
+        }
 
-            try
+        int created = 0;
+        using (var scope = CreateScopedBatch())
+        {
+            foreach (var culture in culturesToCreate)
             {
-                var isDefault = culture.Equals("en-US", StringComparison.OrdinalIgnoreCase)
-                    && !existing.Any(l => l.IsDefault);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                var lang = new Language(culture, culture)
+                try
                 {
-                    IsDefault = isDefault,
-                    IsMandatory = isDefault,
-                    FallbackIsoCode = null
-                };
+                    var isDefault = culture.Equals("en-US", StringComparison.OrdinalIgnoreCase)
+                        && !existing.Any(l => l.IsDefault);
 
-                _localizationService.Save(lang);
-                created++;
+                    var lang = new Language(culture, culture)
+                    {
+                        IsDefault = isDefault,
+                        IsMandatory = isDefault,
+                        FallbackIsoCode = null
+                    };
 
-                LogProgress(created, culturesToCreate.Count, "languages");
+                    _localizationService.Save(lang);
+                    created++;
+
+                    LogProgress(created, culturesToCreate.Count, "languages");
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to create language {Culture}", culture);
+                    if (Options.StopOnError) throw;
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "Failed to create language {Culture}", culture);
-                if (Options.StopOnError) throw;
-            }
+            scope.Complete();
         }
 
         // Cache languages in context for other seeders
-        Context.Languages = _localizationService.GetAllLanguages().ToList();
+        Context.SetLanguages(_localizationService.GetAllLanguages());
 
         Logger.LogInformation("Seeded {Created} languages (total: {Total}, target: {Target})",
             created, Context.Languages.Count, targetCount);

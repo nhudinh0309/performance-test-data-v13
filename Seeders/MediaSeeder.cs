@@ -1,5 +1,6 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
@@ -11,9 +12,11 @@ using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Extensions;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
+using static Umbraco.Community.PerformanceTestDataSeeder.Infrastructure.SeederConstants;
 
 /// <summary>
 /// Seeds media items (PDFs, images, videos) for use in content.
@@ -38,12 +41,13 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
         IShortStringHelper shortStringHelper,
         MediaUrlGeneratorCollection mediaUrlGenerators,
         IContentTypeBaseServiceProvider contentTypeBaseServiceProvider,
+        IScopeProvider scopeProvider,
         ILogger<MediaSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _mediaService = mediaService;
         _mediaTypeService = mediaTypeService;
@@ -65,7 +69,7 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
     /// <inheritdoc />
     protected override bool IsAlreadySeeded()
     {
-        var prefix = GetPrefix("media");
+        var prefix = GetPrefix(PrefixType.Media);
         var rootMedia = _mediaService.GetRootMedia();
         return rootMedia.Any(m => m.Name?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
@@ -74,8 +78,14 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
     protected override Task SeedAsync(CancellationToken cancellationToken)
     {
         var mediaConfig = Config.Media;
-        var prefix = GetPrefix("media");
+        var prefix = GetPrefix(PrefixType.Media);
         int totalTarget = mediaConfig.TotalCount;
+
+        if (IsDryRun)
+        {
+            Logger.LogInformation("[DRY-RUN] Would create media: {PDFs} PDFs, {PNGs} PNGs, {JPGs} JPGs, {Videos} videos (total: {Total})",
+                mediaConfig.PDF.Count, mediaConfig.PNG.Count, mediaConfig.JPG.Count, mediaConfig.Video.Count, totalTarget);
+        }
 
         Logger.LogInformation("Starting media seeding (target: {Target} items)...", totalTarget);
 
@@ -84,24 +94,32 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
         var imagesFolder = CreateFolder($"{prefix}Images", -1);
         var videosFolder = CreateFolder($"{prefix}Videos", -1);
 
-        // Create subfolders for images
-        var pngFolder = CreateFolder("PNG", imagesFolder.Id);
-        var jpgFolder = CreateFolder("JPG", imagesFolder.Id);
+        // Create subfolders for images (use parent ID or -1 for DryRun)
+        var imagesFolderId = imagesFolder?.Id ?? -1;
+        var pngFolder = CreateFolder("PNG", imagesFolderId);
+        var jpgFolder = CreateFolder("JPG", imagesFolderId);
 
         // Seed PDFs
-        SeedPDFs(pdfFolder.Id, prefix, mediaConfig.PDF.Count, mediaConfig.PDF.FolderCount, cancellationToken);
+        var pdfFolderId = pdfFolder?.Id ?? -1;
+        SeedPDFs(pdfFolderId, prefix, mediaConfig.PDF.Count, mediaConfig.PDF.FolderCount, cancellationToken);
 
         // Seed PNGs
-        SeedImages(pngFolder.Id, prefix, mediaConfig.PNG.Count, mediaConfig.PNG.FolderCount, "png", cancellationToken);
+        var pngFolderId = pngFolder?.Id ?? -1;
+        SeedImages(pngFolderId, prefix, mediaConfig.PNG.Count, mediaConfig.PNG.FolderCount, "png", cancellationToken);
 
         // Seed JPGs
-        SeedImages(jpgFolder.Id, prefix, mediaConfig.JPG.Count, mediaConfig.JPG.FolderCount, "jpg", cancellationToken);
+        var jpgFolderId = jpgFolder?.Id ?? -1;
+        SeedImages(jpgFolderId, prefix, mediaConfig.JPG.Count, mediaConfig.JPG.FolderCount, "jpg", cancellationToken);
 
         // Seed Videos
-        SeedVideos(videosFolder.Id, prefix, mediaConfig.Video.Count, cancellationToken);
+        var videosFolderId = videosFolder?.Id ?? -1;
+        SeedVideos(videosFolderId, prefix, mediaConfig.Video.Count, cancellationToken);
 
-        // Cache media items for ContentSeeder
-        LoadMediaItemsToContext();
+        // Cache media items for ContentSeeder (skip in DryRun as nothing was created)
+        if (ShouldPersist)
+        {
+            LoadMediaItemsToContext();
+        }
 
         Logger.LogInformation("Media seeding completed! Cached {Count} images for content linking.", Context.MediaItems.Count);
 
@@ -111,7 +129,7 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
     private void LoadMediaItemsToContext()
     {
         var imageMedia = new List<IMedia>();
-        var prefix = GetPrefix("media");
+        var prefix = GetPrefix(PrefixType.Media);
 
         // Get all root media folders we created
         var rootMedia = _mediaService.GetRootMedia()
@@ -122,7 +140,7 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
         {
             // Page through all descendants to get all images
             long pageIndex = 0;
-            const int pageSize = 500;
+            var pageSize = PaginationPageSize;
             long totalRecords;
 
             do
@@ -134,12 +152,18 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
             } while (pageIndex * pageSize < totalRecords);
         }
 
-        Context.MediaItems.AddRange(imageMedia);
+        Context.AddMediaItems(imageMedia);
         Logger.LogDebug("Loaded {Count} images into context for content linking", imageMedia.Count);
     }
 
-    private IMedia CreateFolder(string name, int parentId)
+    private IMedia? CreateFolder(string name, int parentId)
     {
+        if (IsDryRun)
+        {
+            LogDryRun("Media Folder", name, $"parent={parentId}");
+            return null;
+        }
+
         var folder = _mediaService.CreateMedia(name, parentId, Constants.Conventions.MediaTypes.Folder);
         _mediaService.Save(folder);
         return folder;
@@ -157,6 +181,10 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
             cancellationToken.ThrowIfCancellationRequested();
 
             var folder = CreateFolder($"PDFs_Folder_{f}", parentId);
+            var folderId = folder?.Id ?? parentId;
+
+            // Use a scope per folder for batching (skip in DryRun)
+            using var scope = ShouldPersist ? CreateScopedBatch() : null;
 
             for (int i = 1; i <= filesPerFolder && created < totalCount; i++)
             {
@@ -167,7 +195,7 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
                     var fileName = $"{prefix}PDF_{created + 1}.pdf";
                     var pdfBytes = GenerateMinimalPDF(created + 1);
 
-                    CreateMediaWithFile(folder.Id, fileName, pdfBytes, Constants.Conventions.MediaTypes.File);
+                    CreateMediaWithFile(folderId, fileName, pdfBytes, Constants.Conventions.MediaTypes.File);
                     created++;
 
                     LogProgress(created, totalCount, "PDFs");
@@ -178,6 +206,8 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
                     if (Options.StopOnError) throw;
                 }
             }
+
+            scope?.Complete();
         }
 
         Logger.LogInformation("Created {Count} PDFs total", created);
@@ -190,32 +220,81 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
         int filesPerFolder = totalCount / Math.Max(folderCount, 1);
         int created = 0;
 
+        // Pre-generate seeds for reproducibility using thread-safe method
+        var seeds = Context.GetRandomBatch(totalCount);
+
         for (int f = 1; f <= folderCount; f++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var folder = CreateFolder($"{format.ToUpper()}_Folder_{f}", parentId);
+            var folderId = folder?.Id ?? parentId;
 
-            for (int i = 1; i <= filesPerFolder && created < totalCount; i++)
+            // Calculate how many images for this folder
+            int startIndex = (f - 1) * filesPerFolder;
+            int endIndex = Math.Min(startIndex + filesPerFolder, totalCount);
+            int imagesInThisFolder = endIndex - startIndex;
+
+            if (imagesInThisFolder <= 0) continue;
+
+            // Generate images in parallel (CPU-bound) - do this even in DryRun to show work
+            var imageData = new ConcurrentBag<(int index, string fileName, byte[] data)>();
+
+            Parallel.For(startIndex, endIndex, new ParallelOptions
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                MaxDegreeOfParallelism = Options.ParallelDegree,
+                CancellationToken = cancellationToken
+            }, i =>
+            {
+                var fileName = $"{prefix}Image_{i + 1}.{format}";
+                var bytes = GenerateColoredImage(DefaultImageWidth, DefaultImageHeight, format, seeds[i]);
+                imageData.Add((i, fileName, bytes));
+            });
 
-                try
+            // Save in batched scope (sequential - DB bound)
+            var orderedImages = imageData.OrderBy(x => x.index).ToList();
+            int batchCount = 0;
+            IScope? currentScope = null;
+
+            try
+            {
+                foreach (var (index, fileName, data) in orderedImages)
                 {
-                    var fileName = $"{prefix}Image_{created + 1}.{format}";
-                    // Use shared Random from context for reproducibility
-                    var imageBytes = GenerateColoredImage(100, 100, format, Context.Random.Next());
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    CreateMediaWithFile(folder.Id, fileName, imageBytes, Constants.Conventions.MediaTypes.Image);
-                    created++;
+                    try
+                    {
+                        if (currentScope == null && ShouldPersist)
+                        {
+                            currentScope = CreateScopedBatch();
+                            batchCount = 0;
+                        }
 
-                    LogProgress(created, totalCount, $"{format.ToUpper()} images");
+                        CreateMediaWithFile(folderId, fileName, data, Constants.Conventions.MediaTypes.Image);
+                        created++;
+                        batchCount++;
+
+                        if (ShouldPersist && batchCount >= Options.BatchSize)
+                        {
+                            currentScope?.Complete();
+                            currentScope?.Dispose();
+                            currentScope = null;
+                        }
+
+                        LogProgress(created, totalCount, $"{format.ToUpper()} images");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to create {Format} image {Index}", format.ToUpper(), index + 1);
+                        if (Options.StopOnError) throw;
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning(ex, "Failed to create {Format} image {Index}", format.ToUpper(), created + 1);
-                    if (Options.StopOnError) throw;
-                }
+
+                currentScope?.Complete();
+            }
+            finally
+            {
+                currentScope?.Dispose();
             }
         }
 
@@ -225,6 +304,8 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
     private void SeedVideos(int parentId, string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return;
+
+        using var scope = ShouldPersist ? CreateScopedBatch() : null;
 
         for (int i = 1; i <= count; i++)
         {
@@ -246,11 +327,25 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
             }
         }
 
+        scope?.Complete();
         Logger.LogInformation("Created {Count} videos", count);
     }
 
     private void CreateMediaWithFile(int parentId, string fileName, byte[] fileBytes, string mediaTypeAlias)
     {
+        if (IsDryRun)
+        {
+            LogDryRun("Media", fileName, $"type={mediaTypeAlias}, size={fileBytes.Length} bytes");
+            return;
+        }
+
+        // Validate file bytes
+        if (fileBytes == null || fileBytes.Length == 0)
+        {
+            Logger.LogWarning("Cannot create media {FileName}: file bytes are empty", fileName);
+            return;
+        }
+
         using var stream = new MemoryStream(fileBytes);
 
         var media = _mediaService.CreateMedia(
@@ -268,6 +363,12 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
             stream);
 
         _mediaService.Save(media);
+
+        // Validate media was saved successfully
+        if (media.Id == 0)
+        {
+            Logger.LogWarning("Media {FileName} may not have been saved correctly (ID=0)", fileName);
+        }
     }
 
     private static byte[] GenerateMinimalPDF(int index)
@@ -310,6 +411,12 @@ startxref
 
     private static byte[] GenerateColoredImage(int width, int height, string format, int seed)
     {
+        // Validate dimensions
+        if (width <= 0 || height <= 0)
+        {
+            throw new ArgumentException($"Invalid image dimensions: {width}x{height}");
+        }
+
         var random = new Random(seed);
         var color = Color.FromRgb(
             (byte)random.Next(256),
@@ -330,7 +437,15 @@ startxref
             image.SaveAsJpeg(ms);
         }
 
-        return ms.ToArray();
+        var result = ms.ToArray();
+
+        // Validate generated image has content
+        if (result.Length == 0)
+        {
+            throw new InvalidOperationException($"Generated {format} image is empty (seed: {seed})");
+        }
+
+        return result;
     }
 
     private static byte[] GeneratePlaceholderVideo()
@@ -347,7 +462,7 @@ startxref
             0x6D, 0x70, 0x34, 0x31  // mp41
         };
 
-        var placeholder = new byte[1024 * 100]; // 100KB
+        var placeholder = new byte[PlaceholderVideoSizeBytes];
         Array.Copy(header, placeholder, header.Length);
 
         return placeholder;

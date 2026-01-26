@@ -1,6 +1,29 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
+/// Types of prefixes used for naming seeded data.
+/// </summary>
+public enum PrefixType
+{
+    /// <summary>Data type prefix.</summary>
+    DataType,
+    /// <summary>Element type prefix.</summary>
+    ElementType,
+    /// <summary>Variant document type prefix.</summary>
+    VariantDocType,
+    /// <summary>Invariant document type prefix.</summary>
+    InvariantDocType,
+    /// <summary>Media item prefix.</summary>
+    Media,
+    /// <summary>Content node prefix.</summary>
+    Content,
+    /// <summary>User prefix.</summary>
+    User,
+    /// <summary>Dictionary item prefix.</summary>
+    Dictionary
+}
+
+/// <summary>
 /// Predefined dataset size presets for quick configuration.
 /// </summary>
 public enum SeederPreset
@@ -95,6 +118,57 @@ public class SeederOptions
     /// If null, uses the built-in culture pool.
     /// </summary>
     public string[]? CustomCultures { get; set; }
+
+    /// <summary>
+    /// Number of items to process in each database batch.
+    /// Higher values improve performance but use more memory.
+    /// Default: 50
+    /// </summary>
+    public int BatchSize { get; set; } = 50;
+
+    /// <summary>
+    /// Maximum degree of parallelism for CPU-bound operations (e.g., image generation).
+    /// Set to 1 to disable parallel processing.
+    /// Default: 4
+    /// </summary>
+    public int ParallelDegree { get; set; } = 4;
+
+    /// <summary>
+    /// Automatically publish content after creation.
+    /// If true, content will be published for all configured languages (variant) or immediately (invariant).
+    /// Default: false
+    /// </summary>
+    public bool PublishContent { get; set; } = false;
+
+    /// <summary>
+    /// Number of content items to publish in each batch when PublishContent is true.
+    /// Higher values improve performance but use more memory.
+    /// Set to 0 to publish immediately after each save (legacy behavior).
+    /// Default: 50
+    /// </summary>
+    public int PublishBatchSize { get; set; } = 50;
+
+    /// <summary>
+    /// Run in dry-run mode. Logs what would be created without persisting to database.
+    /// Useful for testing configuration before actual seeding.
+    /// Default: false
+    /// </summary>
+    public bool DryRun { get; set; } = false;
+
+    /// <summary>
+    /// Domain suffix for content domains.
+    /// Domains are created as "test-{contentId}-{culture}.{DomainSuffix}".
+    /// Set to your actual domain for production-like testing.
+    /// Default: "localhost"
+    /// </summary>
+    public string DomainSuffix { get; set; } = "localhost";
+
+    /// <summary>
+    /// Skip creating content domains entirely.
+    /// Useful when you don't need multi-site routing or want to configure domains manually.
+    /// Default: false
+    /// </summary>
+    public bool SkipContentDomains { get; set; } = false;
 }
 
 /// <summary>

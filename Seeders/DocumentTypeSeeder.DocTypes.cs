@@ -14,7 +14,7 @@ public partial class DocumentTypeSeeder
     private void CreateVariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
-        var prefix = GetPrefix("variantdoctype");
+        var prefix = GetPrefix(PrefixType.VariantDocType);
         int created = 0;
 
         // Simple
@@ -26,7 +26,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Variant Simple {i}";
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
-                Context.SimpleDocTypes.Add(docType);
+                Context.AddSimpleDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
             }
@@ -47,7 +47,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Variant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
-                Context.MediumDocTypes.Add(docType);
+                Context.AddMediumDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
             }
@@ -69,7 +69,7 @@ public partial class DocumentTypeSeeder
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
-                Context.ComplexDocTypes.Add(docType);
+                Context.AddComplexDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
             }
@@ -90,7 +90,7 @@ public partial class DocumentTypeSeeder
     private void CreateInvariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
-        var prefix = GetPrefix("invariantdoctype");
+        var prefix = GetPrefix(PrefixType.InvariantDocType);
         int created = 0;
 
         // Simple
@@ -102,7 +102,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Invariant Simple {i}";
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
-                Context.SimpleDocTypes.Add(docType);
+                Context.AddSimpleDocType(docType);
                 created++;
             }
             catch (Exception ex)
@@ -122,7 +122,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Invariant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
-                Context.MediumDocTypes.Add(docType);
+                Context.AddMediumDocType(docType);
                 created++;
             }
             catch (Exception ex)
@@ -143,7 +143,7 @@ public partial class DocumentTypeSeeder
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
                 var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
-                Context.ComplexDocTypes.Add(docType);
+                Context.AddComplexDocType(docType);
                 created++;
             }
             catch (Exception ex)
@@ -243,6 +243,8 @@ public partial class DocumentTypeSeeder
         body {{ font-family: Arial, sans-serif; margin: 20px; }}
         .property {{ margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; }}
         .property-label {{ font-weight: bold; }}
+        .status-published {{ color: green; }}
+        .status-unpublished {{ color: orange; }}
     </style>
 </head>
 <body>
@@ -256,6 +258,14 @@ public partial class DocumentTypeSeeder
     {{
         <div class=""property""><span class=""property-label"">Description:</span> @Model.Value(""description"")</div>
     }}
+    @if (Model.HasProperty(""isPublished""))
+    {{
+        var isPublished = Model.Value<bool>(""isPublished"");
+        <div class=""property"">
+            <span class=""property-label"">Status:</span>
+            <span class=""@(isPublished ? ""status-published"" : ""status-unpublished"")"">@(isPublished ? ""Published"" : ""Draft"")</span>
+        </div>
+    }}
     <footer><p>Generated by PerformanceTestDataSeeder</p></footer>
 </body>
 </html>";
@@ -263,8 +273,44 @@ public partial class DocumentTypeSeeder
     private static string GenerateMediumTemplateContent(string alias, string name) =>
         $@"@inherits Umbraco.Cms.Web.Common.Views.UmbracoViewPage
 @using Umbraco.Cms.Core.Models.Blocks
+@using Umbraco.Cms.Core.Models.PublishedContent
 @{{
     Layout = null;
+
+    void RenderBlockContent(IPublishedElement content, int depth = 0)
+    {{
+        <div class=""block-content"" style=""margin-left: @(depth * 20)px"">
+            <div class=""block-header"">@content.ContentType.Alias</div>
+            @if (content.HasValue(""title"")) {{ <div class=""block-prop""><strong>Title:</strong> @content.Value(""title"")</div> }}
+            @if (content.HasValue(""subtitle"")) {{ <div class=""block-prop""><strong>Subtitle:</strong> @content.Value(""subtitle"")</div> }}
+            @if (content.HasValue(""description"")) {{ <div class=""block-prop""><strong>Description:</strong> @content.Value(""description"")</div> }}
+            @if (content.HasValue(""summary"")) {{ <div class=""block-prop""><strong>Summary:</strong> @content.Value(""summary"")</div> }}
+            @if (content.HasValue(""containerTitle"")) {{ <div class=""block-prop""><strong>Container:</strong> @content.Value(""containerTitle"")</div> }}
+            @if (content.HasValue(""isActive"")) {{ <div class=""block-prop""><strong>Active:</strong> @content.Value(""isActive"")</div> }}
+            @if (content.HasValue(""isVisible"")) {{ <div class=""block-prop""><strong>Visible:</strong> @content.Value(""isVisible"")</div> }}
+            @if (content.HasValue(""mainImage""))
+            {{
+                var img = content.Value<IPublishedContent>(""mainImage"");
+                if (img != null) {{ <div class=""block-prop""><strong>Image:</strong><br/><img src=""@img.Url()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+            }}
+            @if (content.HasValue(""linkedContent""))
+            {{
+                var linked = content.Value<IPublishedContent>(""linkedContent"");
+                if (linked != null) {{ <div class=""block-prop""><strong>Linked:</strong> <a href=""@linked.Url()"">@linked.Name</a></div> }}
+            }}
+            @if (content.HasValue(""nestedBlocks""))
+            {{
+                var nested = content.Value<BlockListModel>(""nestedBlocks"");
+                if (nested != null && nested.Any())
+                {{
+                    <div class=""nested-blocks"">
+                        <strong>Nested Blocks:</strong>
+                        @foreach (var nb in nested) {{ RenderBlockContent(nb.Content, depth + 1); }}
+                    </div>
+                }}
+            }}
+        </div>
+    }}
 }}
 <!DOCTYPE html>
 <html lang=""en"">
@@ -276,24 +322,55 @@ public partial class DocumentTypeSeeder
         .property {{ margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; }}
         .property-label {{ font-weight: bold; }}
         .block-item {{ margin: 10px 0; padding: 15px; background: #f5f5f5; border-left: 3px solid #007bff; }}
+        .block-content {{ padding: 10px; margin: 5px 0; background: #fafafa; border: 1px solid #e0e0e0; }}
+        .block-header {{ font-weight: bold; color: #007bff; margin-bottom: 8px; }}
+        .block-prop {{ margin: 4px 0; }}
+        .block-image {{ max-width: 200px; margin-top: 5px; }}
+        .nested-blocks {{ margin-top: 10px; padding-left: 10px; border-left: 2px solid #007bff; }}
+        .content-link {{ color: #007bff; text-decoration: none; }}
+        .content-link:hover {{ text-decoration: underline; }}
+        section {{ margin-bottom: 30px; }}
+        h2 {{ border-bottom: 2px solid #333; padding-bottom: 5px; }}
     </style>
 </head>
 <body>
     <h1>@Model.Name</h1>
     <p><em>Template: {alias}</em></p>
-    @if (Model.HasValue(""title"")) {{ <div class=""property""><span class=""property-label"">Title:</span> @Model.Value(""title"")</div> }}
-    @if (Model.HasValue(""subtitle"")) {{ <div class=""property""><span class=""property-label"">Subtitle:</span> @Model.Value(""subtitle"")</div> }}
-    @if (Model.HasValue(""summary"")) {{ <div class=""property""><span class=""property-label"">Summary:</span> @Model.Value(""summary"")</div> }}
+    <section>
+        <h2>Content</h2>
+        @if (Model.HasValue(""title"")) {{ <div class=""property""><span class=""property-label"">Title:</span> @Model.Value(""title"")</div> }}
+        @if (Model.HasValue(""subtitle"")) {{ <div class=""property""><span class=""property-label"">Subtitle:</span> @Model.Value(""subtitle"")</div> }}
+        @if (Model.HasValue(""summary"")) {{ <div class=""property""><span class=""property-label"">Summary:</span> @Model.Value(""summary"")</div> }}
+    </section>
+    @if (Model.HasValue(""relatedContent""))
+    {{
+        <section>
+            <h2>Related Content</h2>
+            @{{
+                var related = Model.Value<IPublishedContent>(""relatedContent"");
+                if (related != null)
+                {{
+                    <div class=""property"">
+                        <a href=""@related.Url()"" class=""content-link"">@related.Name</a>
+                    </div>
+                }}
+            }}
+        </section>
+    }}
     @if (Model.HasValue(""blocks""))
     {{
         var blocks = Model.Value<BlockListModel>(""blocks"");
         if (blocks != null && blocks.Any())
         {{
-            <h2>Blocks</h2>
-            foreach (var block in blocks)
-            {{
-                <div class=""block-item"">@block.Content.ContentType.Alias</div>
-            }}
+            <section>
+                <h2>Blocks</h2>
+                @foreach (var block in blocks)
+                {{
+                    <div class=""block-item"">
+                        @{{ RenderBlockContent(block.Content); }}
+                    </div>
+                }}
+            </section>
         }}
     }}
     <footer><p>Generated by PerformanceTestDataSeeder</p></footer>
@@ -306,6 +383,81 @@ public partial class DocumentTypeSeeder
 @using Umbraco.Cms.Core.Models.PublishedContent
 @{{
     Layout = null;
+
+    void RenderBlockContent(IPublishedElement content, int depth = 0)
+    {{
+        <div class=""block-content"" style=""margin-left: @(depth * 20)px"">
+            <div class=""block-header"">@content.ContentType.Alias</div>
+            @if (content.HasValue(""title"")) {{ <div class=""block-prop""><strong>Title:</strong> @content.Value(""title"")</div> }}
+            @if (content.HasValue(""subtitle"")) {{ <div class=""block-prop""><strong>Subtitle:</strong> @content.Value(""subtitle"")</div> }}
+            @if (content.HasValue(""description"")) {{ <div class=""block-prop""><strong>Description:</strong> @content.Value(""description"")</div> }}
+            @if (content.HasValue(""summary"")) {{ <div class=""block-prop""><strong>Summary:</strong> @content.Value(""summary"")</div> }}
+            @if (content.HasValue(""containerTitle"")) {{ <div class=""block-prop""><strong>Container:</strong> @content.Value(""containerTitle"")</div> }}
+            @if (content.HasValue(""isActive"")) {{ <div class=""block-prop""><strong>Active:</strong> @content.Value(""isActive"")</div> }}
+            @if (content.HasValue(""isVisible"")) {{ <div class=""block-prop""><strong>Visible:</strong> @content.Value(""isVisible"")</div> }}
+            @if (content.HasValue(""isEnabled"")) {{ <div class=""block-prop""><strong>Enabled:</strong> @content.Value(""isEnabled"")</div> }}
+            @if (content.HasValue(""cssClass"")) {{ <div class=""block-prop""><strong>CSS Class:</strong> @content.Value(""cssClass"")</div> }}
+            @if (content.HasValue(""metaTitle"")) {{ <div class=""block-prop""><strong>Meta Title:</strong> @content.Value(""metaTitle"")</div> }}
+            @if (content.HasValue(""metaDescription"")) {{ <div class=""block-prop""><strong>Meta Description:</strong> @content.Value(""metaDescription"")</div> }}
+            @if (content.HasValue(""mainImage""))
+            {{
+                var img = content.Value<IPublishedContent>(""mainImage"");
+                if (img != null) {{ <div class=""block-prop""><strong>Main Image:</strong><br/><img src=""@img.Url()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+            }}
+            @if (content.HasValue(""thumbnailImage""))
+            {{
+                var thumb = content.Value<IPublishedContent>(""thumbnailImage"");
+                if (thumb != null) {{ <div class=""block-prop""><strong>Thumbnail:</strong><br/><img src=""@thumb.Url()"" alt=""@thumb.Name"" class=""block-thumbnail"" /></div> }}
+            }}
+            @if (content.HasValue(""linkedContent""))
+            {{
+                var linked = content.Value<IPublishedContent>(""linkedContent"");
+                if (linked != null) {{ <div class=""block-prop""><strong>Linked:</strong> <a href=""@linked.Url()"" class=""content-link"">@linked.Name</a></div> }}
+            }}
+            @if (content.HasValue(""primaryLink""))
+            {{
+                var primary = content.Value<IPublishedContent>(""primaryLink"");
+                if (primary != null) {{ <div class=""block-prop""><strong>Primary Link:</strong> <a href=""@primary.Url()"" class=""content-link"">@primary.Name</a></div> }}
+            }}
+            @if (content.HasValue(""secondaryLink""))
+            {{
+                var secondary = content.Value<IPublishedContent>(""secondaryLink"");
+                if (secondary != null) {{ <div class=""block-prop""><strong>Secondary Link:</strong> <a href=""@secondary.Url()"" class=""content-link"">@secondary.Name</a></div> }}
+            }}
+            @if (content.HasValue(""nestedBlocks""))
+            {{
+                var nested = content.Value<BlockListModel>(""nestedBlocks"");
+                if (nested != null && nested.Any())
+                {{
+                    <div class=""nested-blocks"">
+                        <strong>Nested Blocks:</strong>
+                        @foreach (var nb in nested) {{ RenderBlockContent(nb.Content, depth + 1); }}
+                    </div>
+                }}
+            }}
+        </div>
+    }}
+
+    void RenderGridItem(BlockGridItem item, int depth = 0)
+    {{
+        <div class=""grid-item"" style=""margin-left: @(depth * 20)px"">
+            <div class=""grid-header"">@item.Content.ContentType.Alias <span class=""grid-span"">(Columns: @item.ColumnSpan, Row: @item.RowSpan)</span></div>
+            @{{ RenderBlockContent(item.Content, 0); }}
+            @if (item.Areas != null && item.Areas.Any())
+            {{
+                foreach (var area in item.Areas)
+                {{
+                    if (area.Any())
+                    {{
+                        <div class=""grid-area"">
+                            <strong>Area: @area.Alias</strong>
+                            @foreach (var areaItem in area) {{ RenderGridItem(areaItem, depth + 1); }}
+                        </div>
+                    }}
+                }}
+            }}
+        </div>
+    }}
 }}
 <!DOCTYPE html>
 <html lang=""en"">
@@ -317,8 +469,22 @@ public partial class DocumentTypeSeeder
         .property {{ margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; }}
         .property-label {{ font-weight: bold; }}
         .block-item {{ margin: 10px 0; padding: 15px; background: #f5f5f5; border-left: 3px solid #007bff; }}
+        .block-content {{ padding: 10px; margin: 5px 0; background: #fafafa; border: 1px solid #e0e0e0; }}
+        .block-header {{ font-weight: bold; color: #007bff; margin-bottom: 8px; }}
+        .block-prop {{ margin: 4px 0; }}
+        .block-image {{ max-width: 200px; margin-top: 5px; }}
+        .block-thumbnail {{ max-width: 100px; margin-top: 5px; }}
+        .nested-blocks {{ margin-top: 10px; padding-left: 10px; border-left: 2px solid #007bff; }}
         .grid-item {{ margin: 10px 0; padding: 15px; background: #e8f4e8; border-left: 3px solid #28a745; }}
+        .grid-header {{ font-weight: bold; color: #28a745; margin-bottom: 8px; }}
+        .grid-span {{ font-weight: normal; color: #666; font-size: 0.9em; }}
+        .grid-area {{ margin-top: 10px; padding: 10px; background: #f0f8f0; border: 1px dashed #28a745; }}
         .media-image {{ max-width: 300px; }}
+        .media-thumbnail {{ max-width: 150px; margin-left: 20px; }}
+        .content-link {{ color: #007bff; text-decoration: none; }}
+        .content-link:hover {{ text-decoration: underline; }}
+        .related-list {{ list-style: none; padding: 0; }}
+        .related-list li {{ margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 4px; }}
         section {{ margin-bottom: 30px; }}
         h2 {{ border-bottom: 2px solid #333; padding-bottom: 5px; }}
     </style>
@@ -339,21 +505,85 @@ public partial class DocumentTypeSeeder
             var img = Model.Value<IPublishedContent>(""mainImage"");
             if (img != null) {{ <img src=""@img.Url()"" alt=""@img.Name"" class=""media-image"" /> }}
         }}
+        @if (Model.HasValue(""thumbnailImage""))
+        {{
+            var thumb = Model.Value<IPublishedContent>(""thumbnailImage"");
+            if (thumb != null) {{ <img src=""@thumb.Url()"" alt=""@thumb.Name"" class=""media-thumbnail"" /> }}
+        }}
     </section>
+    @if (Model.HasValue(""primaryContent"") || Model.HasValue(""secondaryContent"") || Model.HasValue(""tertiaryContent""))
+    {{
+        <section>
+            <h2>Related Content</h2>
+            <ul class=""related-list"">
+            @if (Model.HasValue(""primaryContent""))
+            {{
+                var primary = Model.Value<IPublishedContent>(""primaryContent"");
+                if (primary != null) {{ <li><strong>Primary:</strong> <a href=""@primary.Url()"" class=""content-link"">@primary.Name</a></li> }}
+            }}
+            @if (Model.HasValue(""secondaryContent""))
+            {{
+                var secondary = Model.Value<IPublishedContent>(""secondaryContent"");
+                if (secondary != null) {{ <li><strong>Secondary:</strong> <a href=""@secondary.Url()"" class=""content-link"">@secondary.Name</a></li> }}
+            }}
+            @if (Model.HasValue(""tertiaryContent""))
+            {{
+                var tertiary = Model.Value<IPublishedContent>(""tertiaryContent"");
+                if (tertiary != null) {{ <li><strong>Tertiary:</strong> <a href=""@tertiary.Url()"" class=""content-link"">@tertiary.Name</a></li> }}
+            }}
+            </ul>
+        </section>
+    }}
     @if (Model.HasValue(""headerBlocks""))
     {{
         <section>
             <h2>Header Blocks</h2>
-            @{{ var blocks = Model.Value<BlockListModel>(""headerBlocks""); }}
-            @if (blocks != null) {{ foreach (var b in blocks) {{ <div class=""block-item"">@b.Content.ContentType.Alias</div> }} }}
+            @{{
+                var headerBlocks = Model.Value<BlockListModel>(""headerBlocks"");
+                if (headerBlocks != null)
+                {{
+                    foreach (var block in headerBlocks)
+                    {{
+                        <div class=""block-item"">
+                            @{{ RenderBlockContent(block.Content); }}
+                        </div>
+                    }}
+                }}
+            }}
+        </section>
+    }}
+    @if (Model.HasValue(""footerBlocks""))
+    {{
+        <section>
+            <h2>Footer Blocks</h2>
+            @{{
+                var footerBlocks = Model.Value<BlockListModel>(""footerBlocks"");
+                if (footerBlocks != null)
+                {{
+                    foreach (var block in footerBlocks)
+                    {{
+                        <div class=""block-item"">
+                            @{{ RenderBlockContent(block.Content); }}
+                        </div>
+                    }}
+                }}
+            }}
         </section>
     }}
     @if (Model.HasValue(""mainGrid""))
     {{
         <section>
             <h2>Main Grid</h2>
-            @{{ var grid = Model.Value<BlockGridModel>(""mainGrid""); }}
-            @if (grid != null) {{ foreach (var g in grid) {{ <div class=""grid-item"">@g.Content.ContentType.Alias (Span: @g.ColumnSpan)</div> }} }}
+            @{{
+                var grid = Model.Value<BlockGridModel>(""mainGrid"");
+                if (grid != null)
+                {{
+                    foreach (var gridItem in grid)
+                    {{
+                        RenderGridItem(gridItem);
+                    }}
+                }}
+            }}
         </section>
     }}
     <footer><p>Generated by PerformanceTestDataSeeder</p></footer>
@@ -386,7 +616,8 @@ public partial class DocumentTypeSeeder
         {
             Alias = "isPublished",
             Name = "Is Published",
-            SortOrder = 3
+            SortOrder = 3,
+            Variations = docType.Variations
         });
 
         docType.PropertyGroups.Add(group);
@@ -406,12 +637,12 @@ public partial class DocumentTypeSeeder
         if (Context.ContentPickerDataType != null)
         {
             relationsGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.ContentPickerDataType)
-            { Alias = "relatedContent", Name = "Related Content", SortOrder = 1 });
+            { Alias = "relatedContent", Name = "Related Content", SortOrder = 1, Variations = docType.Variations });
         }
         if (blockListDataType != null)
         {
             relationsGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, blockListDataType)
-            { Alias = "blocks", Name = "Blocks", SortOrder = 2 });
+            { Alias = "blocks", Name = "Blocks", SortOrder = 2, Variations = docType.Variations });
         }
 
         docType.PropertyGroups.Add(contentGroup);
@@ -432,34 +663,34 @@ public partial class DocumentTypeSeeder
         if (Context.MediaPickerDataType != null)
         {
             mediaGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.MediaPickerDataType)
-            { Alias = "mainImage", Name = "Main Image", SortOrder = 1 });
+            { Alias = "mainImage", Name = "Main Image", SortOrder = 1, Variations = docType.Variations });
             mediaGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.MediaPickerDataType)
-            { Alias = "thumbnailImage", Name = "Thumbnail Image", SortOrder = 2 });
+            { Alias = "thumbnailImage", Name = "Thumbnail Image", SortOrder = 2, Variations = docType.Variations });
         }
 
         var relationsGroup = new PropertyGroup(true) { Alias = "relations", Name = "Relations", SortOrder = 3 };
         if (Context.ContentPickerDataType != null)
         {
             relationsGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.ContentPickerDataType)
-            { Alias = "primaryContent", Name = "Primary Content", SortOrder = 1 });
+            { Alias = "primaryContent", Name = "Primary Content", SortOrder = 1, Variations = docType.Variations });
             relationsGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.ContentPickerDataType)
-            { Alias = "secondaryContent", Name = "Secondary Content", SortOrder = 2 });
+            { Alias = "secondaryContent", Name = "Secondary Content", SortOrder = 2, Variations = docType.Variations });
             relationsGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, Context.ContentPickerDataType)
-            { Alias = "tertiaryContent", Name = "Tertiary Content", SortOrder = 3 });
+            { Alias = "tertiaryContent", Name = "Tertiary Content", SortOrder = 3, Variations = docType.Variations });
         }
 
         var blocksGroup = new PropertyGroup(true) { Alias = "blocks", Name = "Blocks", SortOrder = 4 };
         if (blockListDataType != null)
         {
             blocksGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, blockListDataType)
-            { Alias = "headerBlocks", Name = "Header Blocks", SortOrder = 1 });
+            { Alias = "headerBlocks", Name = "Header Blocks", SortOrder = 1, Variations = docType.Variations });
             blocksGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, blockListDataType)
-            { Alias = "footerBlocks", Name = "Footer Blocks", SortOrder = 2 });
+            { Alias = "footerBlocks", Name = "Footer Blocks", SortOrder = 2, Variations = docType.Variations });
         }
         if (blockGridDataType != null)
         {
             blocksGroup.PropertyTypes!.Add(new PropertyType(_shortStringHelper, blockGridDataType)
-            { Alias = "mainGrid", Name = "Main Grid", SortOrder = 3 });
+            { Alias = "mainGrid", Name = "Main Grid", SortOrder = 3, Variations = docType.Variations });
         }
 
         docType.PropertyGroups.Add(contentGroup);

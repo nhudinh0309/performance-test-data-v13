@@ -7,6 +7,7 @@ using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
@@ -27,12 +28,13 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         IDataTypeService dataTypeService,
         PropertyEditorCollection propertyEditors,
         IConfigurationEditorJsonSerializer serializer,
+        IScopeProvider scopeProvider,
         ILogger<DataTypeSeeder> logger,
         IRuntimeState runtimeState,
         IOptions<SeederConfiguration> config,
         IOptions<SeederOptions> options,
         SeederExecutionContext context)
-        : base(logger, runtimeState, config, options, context)
+        : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _dataTypeService = dataTypeService;
         _propertyEditors = propertyEditors;
@@ -51,7 +53,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
     /// <inheritdoc />
     protected override bool IsAlreadySeeded()
     {
-        var prefix = GetPrefix("datatype");
+        var prefix = GetPrefix(PrefixType.DataType);
         var existing = _dataTypeService.GetAll();
         return existing.Any(d => d.Name?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
@@ -60,18 +62,36 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
     protected override Task SeedAsync(CancellationToken cancellationToken)
     {
         var dataTypesConfig = Config.DataTypes;
-        var prefix = GetPrefix("datatype");
-        int totalCreated = 0;
+        var prefix = GetPrefix(PrefixType.DataType);
         int totalTarget = dataTypesConfig.Total;
 
-        // Create each type of data type
-        totalCreated += CreateListViewDataTypes(prefix, dataTypesConfig.ListView, cancellationToken);
-        totalCreated += CreateMultiNodeTreePickerDataTypes(prefix, dataTypesConfig.MultiNodeTreePicker, cancellationToken);
-        totalCreated += CreateRichTextEditorDataTypes(prefix, dataTypesConfig.RichTextEditor, cancellationToken);
-        totalCreated += CreateMediaPickerDataTypes(prefix, dataTypesConfig.MediaPicker, cancellationToken);
-        totalCreated += CreateTextareaDataTypes(prefix, dataTypesConfig.Textarea, cancellationToken);
-        totalCreated += CreateDropdownDataTypes(prefix, dataTypesConfig.Dropdown, cancellationToken);
-        totalCreated += CreateNumericDataTypes(prefix, dataTypesConfig.Numeric, cancellationToken);
+        if (IsDryRun)
+        {
+            Logger.LogInformation("[DRY-RUN] Would create {Total} data types with prefix '{Prefix}'", totalTarget, prefix);
+            Logger.LogInformation("[DRY-RUN] Types: ListView={ListView}, MNTP={MNTP}, RTE={RTE}, MediaPicker={Media}, Textarea={Textarea}, Dropdown={Dropdown}, Numeric={Numeric}",
+                dataTypesConfig.ListView, dataTypesConfig.MultiNodeTreePicker, dataTypesConfig.RichTextEditor,
+                dataTypesConfig.MediaPicker, dataTypesConfig.Textarea, dataTypesConfig.Dropdown, dataTypesConfig.Numeric);
+            // Still load built-in data types for DryRun validation
+            LoadBuiltInDataTypes();
+            return Task.CompletedTask;
+        }
+
+        int totalCreated = 0;
+
+        // Use a single scope for all data type creation (usually small numbers)
+        using (var scope = CreateScopedBatch())
+        {
+            // Create each type of data type
+            totalCreated += CreateListViewDataTypes(prefix, dataTypesConfig.ListView, cancellationToken);
+            totalCreated += CreateMultiNodeTreePickerDataTypes(prefix, dataTypesConfig.MultiNodeTreePicker, cancellationToken);
+            totalCreated += CreateRichTextEditorDataTypes(prefix, dataTypesConfig.RichTextEditor, cancellationToken);
+            totalCreated += CreateMediaPickerDataTypes(prefix, dataTypesConfig.MediaPicker, cancellationToken);
+            totalCreated += CreateTextareaDataTypes(prefix, dataTypesConfig.Textarea, cancellationToken);
+            totalCreated += CreateDropdownDataTypes(prefix, dataTypesConfig.Dropdown, cancellationToken);
+            totalCreated += CreateNumericDataTypes(prefix, dataTypesConfig.Numeric, cancellationToken);
+
+            scope.Complete();
+        }
 
         // Load and cache built-in data types for other seeders
         LoadBuiltInDataTypes();
@@ -227,6 +247,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
 
                 _dataTypeService.Save(dataType);
                 created++;
+                LogProgress(created, count, "RTE data types");
             }
             catch (Exception ex)
             {
@@ -235,7 +256,6 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             }
         }
 
-        Logger.LogInformation("Created {Count} RTE data types", created);
         return created;
     }
 
@@ -266,6 +286,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
 
                 _dataTypeService.Save(dataType);
                 created++;
+                LogProgress(created, count, "MediaPicker data types");
             }
             catch (Exception ex)
             {
@@ -274,7 +295,6 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             }
         }
 
-        Logger.LogInformation("Created {Count} MediaPicker data types", created);
         return created;
     }
 
@@ -305,6 +325,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
 
                 _dataTypeService.Save(dataType);
                 created++;
+                LogProgress(created, count, "Textarea data types");
             }
             catch (Exception ex)
             {
@@ -313,7 +334,6 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             }
         }
 
-        Logger.LogInformation("Created {Count} Textarea data types", created);
         return created;
     }
 
@@ -358,6 +378,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
 
                 _dataTypeService.Save(dataType);
                 created++;
+                LogProgress(created, count, "Dropdown data types");
             }
             catch (Exception ex)
             {
@@ -366,7 +387,6 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             }
         }
 
-        Logger.LogInformation("Created {Count} Dropdown data types", created);
         return created;
     }
 
@@ -397,6 +417,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
 
                 _dataTypeService.Save(dataType);
                 created++;
+                LogProgress(created, count, "Numeric data types");
             }
             catch (Exception ex)
             {
@@ -405,7 +426,6 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             }
         }
 
-        Logger.LogInformation("Created {Count} Numeric data types", created);
         return created;
     }
 }

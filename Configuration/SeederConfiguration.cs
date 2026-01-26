@@ -1,5 +1,7 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
+
 /// <summary>
 /// Configuration model for seeder target counts.
 /// Override values in appsettings.json under "SeederConfiguration" section.
@@ -176,6 +178,13 @@ public class DocumentTypesConfig
     /// Minimum 1 (no nesting), recommended 2-8 depending on load test requirements.
     /// </summary>
     public int NestingDepth { get; set; } = 2;
+
+    /// <summary>
+    /// Maximum number of block elements to add to each Block List or Block Grid.
+    /// Higher values create more complex block editors but may impact editor performance.
+    /// Default: 30
+    /// </summary>
+    public int MaxBlocksPerEditor { get; set; } = SeederConstants.DefaultMaxBlocksPerEditor;
 
     /// <summary>
     /// Total element types to be created.

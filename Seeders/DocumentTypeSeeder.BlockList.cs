@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// Partial class containing Block List data type creation logic.
@@ -20,7 +21,7 @@ public partial class DocumentTypeSeeder
             return blockListDataTypes;
         }
 
-        var prefix = GetPrefix("datatype");
+        var prefix = GetPrefix(PrefixType.DataType);
 
         for (int i = 0; i < count; i++)
         {
