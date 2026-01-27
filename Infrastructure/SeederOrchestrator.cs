@@ -1,10 +1,14 @@
+
 namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Umbraco.Cms.Core.Services;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
+using Umbraco.Cms.Core.PublishedCache;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
@@ -19,6 +23,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
     private readonly SeederConfigurationValidator _validator;
     private readonly SeederConfiguration _config;
     private readonly SeederStatusService _statusService;
+    private readonly IPublishedSnapshotService _publishedSnapshotService;
+    private readonly IRuntimeState _runtimeState;
 
     /// <summary>
     /// Creates a new SeederOrchestrator instance.
@@ -29,7 +35,9 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         IOptions<SeederOptions> options,
         IOptions<SeederConfiguration> config,
         SeederConfigurationValidator validator,
-        SeederStatusService statusService)
+        SeederStatusService statusService,
+        IPublishedSnapshotService publishedSnapshotService,
+        IRuntimeState runtimeState)
     {
         // Sort seeders by execution order
         _seeders = seeders.OrderBy(s => s.ExecutionOrder).ToList();
@@ -38,6 +46,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         _config = config.Value;
         _validator = validator;
         _statusService = statusService;
+        _publishedSnapshotService = publishedSnapshotService;
+        _runtimeState = runtimeState;
     }
 
     /// <summary>
@@ -120,6 +130,27 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
                         throw;
                     }
                 }
+            }
+
+            // Rebuild published content cache to include newly created content and media
+            if (_options.RebuildCacheAfterSeeding && _runtimeState.Level == RuntimeLevel.Run)
+            {
+                try
+                {
+                    _logger.LogInformation("PerformanceTestDataSeeder: Rebuilding published content cache...");
+                    _publishedSnapshotService.Rebuild();
+                    _logger.LogInformation("PerformanceTestDataSeeder: Published content cache rebuilt");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "PerformanceTestDataSeeder: Could not rebuild cache automatically. " +
+                        "Please rebuild manually via Umbraco backoffice: Settings > Published Status > Rebuild");
+                }
+            }
+            else if (_options.RebuildCacheAfterSeeding)
+            {
+                _logger.LogInformation("PerformanceTestDataSeeder: Skipping cache rebuild (Umbraco Level={Level}). " +
+                    "Restart the application to rebuild cache.", _runtimeState.Level);
             }
 
             totalStopwatch.Stop();

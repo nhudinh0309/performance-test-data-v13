@@ -184,7 +184,8 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
             var folderId = folder?.Id ?? parentId;
 
             // Use a scope per folder for batching (skip in DryRun)
-            using var scope = ShouldPersist ? CreateScopedBatch() : null;
+            // Don't suppress notifications - cache needs to be updated for media
+            using var scope = ShouldPersist ? CreateScopedBatch(suppressNotifications: false) : null;
 
             for (int i = 1; i <= filesPerFolder && created < totalCount; i++)
             {
@@ -266,7 +267,8 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
                     {
                         if (currentScope == null && ShouldPersist)
                         {
-                            currentScope = CreateScopedBatch();
+                            // Don't suppress notifications - cache needs to be updated for media
+                            currentScope = CreateScopedBatch(suppressNotifications: false);
                             batchCount = 0;
                         }
 
@@ -305,7 +307,8 @@ public class MediaSeeder : BaseSeeder<MediaSeeder>
     {
         if (count <= 0) return;
 
-        using var scope = ShouldPersist ? CreateScopedBatch() : null;
+        // Don't suppress notifications - cache needs to be updated for media
+        using var scope = ShouldPersist ? CreateScopedBatch(suppressNotifications: false) : null;
 
         for (int i = 1; i <= count; i++)
         {

@@ -24,6 +24,28 @@ public enum PrefixType
 }
 
 /// <summary>
+/// Content publishing modes.
+/// </summary>
+public enum PublishMode
+{
+    /// <summary>
+    /// Don't publish any content (save as draft).
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// Publish all content.
+    /// </summary>
+    All,
+
+    /// <summary>
+    /// Publish only the first root section and its descendants.
+    /// Useful for testing with a mix of published/unpublished content.
+    /// </summary>
+    FirstSection
+}
+
+/// <summary>
 /// Predefined dataset size presets for quick configuration.
 /// </summary>
 public enum SeederPreset
@@ -134,14 +156,14 @@ public class SeederOptions
     public int ParallelDegree { get; set; } = 4;
 
     /// <summary>
-    /// Automatically publish content after creation.
-    /// If true, content will be published for all configured languages (variant) or immediately (invariant).
-    /// Default: false
+    /// Content publishing mode.
+    /// None = save all as draft, All = publish everything, FirstSection = publish only first root section.
+    /// Default: All
     /// </summary>
-    public bool PublishContent { get; set; } = false;
+    public PublishMode PublishMode { get; set; } = PublishMode.All;
 
     /// <summary>
-    /// Number of content items to publish in each batch when PublishContent is true.
+    /// Number of content items to publish in each batch when publishing is enabled.
     /// Higher values improve performance but use more memory.
     /// Set to 0 to publish immediately after each save (legacy behavior).
     /// Default: 50
@@ -169,6 +191,14 @@ public class SeederOptions
     /// Default: false
     /// </summary>
     public bool SkipContentDomains { get; set; } = false;
+
+    /// <summary>
+    /// Rebuild the published content cache after seeding completes.
+    /// This ensures newly created content and media are immediately available on the frontend.
+    /// Disable if you prefer to rebuild the cache manually or via Umbraco backoffice.
+    /// Default: true
+    /// </summary>
+    public bool RebuildCacheAfterSeeding { get; set; } = true;
 }
 
 /// <summary>

@@ -34,6 +34,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     // Batch publishing: tracks content items pending publication
     private readonly List<(IContent Content, bool IsVariant)> _pendingPublishContent = new();
 
+    // Track current section for FirstSection publish mode
+    private int _currentSection = 0;
+
     /// <summary>
     /// Clears all internal caches. Called at the start of seeding to ensure fresh data.
     /// </summary>
@@ -189,6 +192,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             for (int section = 1; section <= contentConfig.RootSections && totalCreated < targetTotal; section++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                _currentSection = section;
 
                 try
                 {
@@ -223,7 +227,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         if (ShouldPersist && batchCount >= Options.BatchSize)
                         {
                             CommitAndResetBatch(ref currentScope, ref batchCount);
-                            PublishPendingContentBatch(); // Batch publish if threshold reached
                         }
 
                         // Each category has pages
@@ -253,7 +256,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                             if (ShouldPersist && batchCount >= Options.BatchSize)
                             {
                                 CommitAndResetBatch(ref currentScope, ref batchCount);
-                                PublishPendingContentBatch(); // Batch publish if threshold reached
                             }
 
                             // Some pages have detail children (Level 4)
@@ -277,7 +279,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                     if (ShouldPersist && batchCount >= Options.BatchSize)
                                     {
                                         CommitAndResetBatch(ref currentScope, ref batchCount);
-                                        PublishPendingContentBatch(); // Batch publish if threshold reached
                                     }
                                 }
                             }
@@ -286,7 +287,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         }
                     }
 
-                    Logger.LogInformation("Completed root section {Section}/{TotalSections} - Total content created: {Created}/{Target}",
+                    Logger.LogDebug("Completed root section {Section}/{TotalSections} - Total content created: {Created}/{Target}",
                         section, contentConfig.RootSections, totalCreated, targetTotal);
                 }
                 catch (Exception ex)
@@ -307,15 +308,82 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             currentScope?.Dispose();
         }
 
-        // Publish any remaining pending content
+        // Publish all pending content at the end (after all saves are complete)
         if (_pendingPublishContent.Count > 0)
         {
-            Logger.LogInformation("Publishing remaining {Count} content items...", _pendingPublishContent.Count);
-            PublishPendingContentBatch(force: true);
+            Logger.LogInformation("Publishing {Count} content items...", _pendingPublishContent.Count);
+            PublishAllPendingContent(cancellationToken);
         }
 
         Logger.LogInformation("Final count - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Total: {Total}",
             simpleCreated, mediumCreated, complexCreated, totalCreated);
+    }
+
+    /// <summary>
+    /// Publishes all pending content items in batches at the end of content creation.
+    /// </summary>
+    private void PublishAllPendingContent(CancellationToken cancellationToken)
+    {
+        if (Options.PublishMode == PublishMode.None || _pendingPublishContent.Count == 0)
+            return;
+
+        var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
+        int totalToPublish = _pendingPublishContent.Count;
+        int published = 0;
+        int failed = 0;
+
+        // Process in batches
+        var batchSize = Options.PublishBatchSize > 0 ? Options.PublishBatchSize : 50;
+
+        while (_pendingPublishContent.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batch = _pendingPublishContent.Take(batchSize).ToList();
+
+            // Don't suppress notifications when publishing - cache needs to be updated
+            using var scope = CreateScopedBatch(suppressNotifications: false);
+
+            foreach (var (content, isVariant) in batch)
+            {
+                try
+                {
+                    var result = isVariant
+                        ? _contentService.SaveAndPublish(content, cultures)
+                        : _contentService.SaveAndPublish(content);
+
+                    if (result.Success)
+                    {
+                        published++;
+                    }
+                    else
+                    {
+                        failed++;
+                        Logger.LogDebug("Failed to publish content {Name}: {Messages}",
+                            content.Name ?? "Unknown",
+                            string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    Logger.LogWarning(ex, "Exception publishing content {Name}", content.Name ?? "Unknown");
+                    if (Options.StopOnError) throw;
+                }
+            }
+
+            scope.Complete();
+
+            // Remove published items from pending list
+            foreach (var item in batch)
+            {
+                _pendingPublishContent.Remove(item);
+            }
+
+            LogProgress(published, totalToPublish, "content published");
+        }
+
+        Logger.LogInformation("Published {Success} content items ({Failed} failed)", published, failed);
     }
 
     /// <summary>
@@ -415,7 +483,16 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var content = _contentService.Create(name, parentId, docType);
         var isVariant = docType.Variations.HasFlag(ContentVariation.Culture);
         var isRootContent = parentId == -1;
-        var useBatchPublishing = Options.PublishContent && Options.PublishBatchSize > 0;
+
+        // Determine if this content should be published based on PublishMode
+        var shouldPublish = Options.PublishMode switch
+        {
+            PublishMode.All => true,
+            PublishMode.FirstSection => _currentSection == 1,
+            PublishMode.None => false,
+            _ => false
+        };
+        var useBatchPublishing = shouldPublish && Options.PublishBatchSize > 0;
 
         if (isVariant)
         {
@@ -429,7 +506,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             }
 
             // Save content (publish later if batch mode, or now if immediate mode)
-            if (Options.PublishContent && !useBatchPublishing)
+            if (shouldPublish && !useBatchPublishing)
             {
                 // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
                 var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
@@ -462,7 +539,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             // For invariant content
             SetPropertiesForCulture(content, complexity, null);
 
-            if (Options.PublishContent && !useBatchPublishing)
+            if (shouldPublish && !useBatchPublishing)
             {
                 // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
                 var result = _contentService.SaveAndPublish(content);
@@ -485,71 +562,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
 
         return content;
-    }
-
-    /// <summary>
-    /// Publishes pending content items in batches for better performance.
-    /// </summary>
-    /// <param name="force">If true, publishes all remaining items regardless of batch size.</param>
-    private void PublishPendingContentBatch(bool force = false)
-    {
-        if (!Options.PublishContent || Options.PublishBatchSize <= 0)
-            return;
-
-        if (!force && _pendingPublishContent.Count < Options.PublishBatchSize)
-            return;
-
-        if (_pendingPublishContent.Count == 0)
-            return;
-
-        var itemsToPublish = force
-            ? _pendingPublishContent.ToList()
-            : _pendingPublishContent.Take(Options.PublishBatchSize).ToList();
-
-        var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
-        int successCount = 0;
-        int failCount = 0;
-
-        using var scope = CreateScopedBatch();
-
-        foreach (var (content, isVariant) in itemsToPublish)
-        {
-            try
-            {
-                var result = isVariant
-                    ? _contentService.SaveAndPublish(content, cultures)
-                    : _contentService.SaveAndPublish(content);
-
-                if (result.Success)
-                {
-                    successCount++;
-                }
-                else
-                {
-                    failCount++;
-                    Logger.LogDebug("Failed to publish content {Name}: {Messages}",
-                        content.Name ?? "Unknown",
-                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
-                }
-            }
-            catch (Exception ex)
-            {
-                failCount++;
-                Logger.LogWarning(ex, "Exception publishing content {Name}", content.Name ?? "Unknown");
-                if (Options.StopOnError) throw;
-            }
-        }
-
-        scope.Complete();
-
-        // Remove published items from pending list
-        foreach (var item in itemsToPublish)
-        {
-            _pendingPublishContent.Remove(item);
-        }
-
-        Logger.LogDebug("Batch published {Success} content items ({Failed} failed, {Remaining} remaining)",
-            successCount, failCount, _pendingPublishContent.Count);
     }
 
     private void SetPropertiesForCulture(IContent content, string complexity, string? culture)
@@ -600,30 +612,44 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             Context.Languages.Count, content.Name, content.Id, domainSuffix);
     }
 
+    /// <summary>
+    /// Gets the culture for a property. Returns null if the property is invariant.
+    /// </summary>
+    private string? GetCulture(IContent content, string propertyAlias, string? culture)
+    {
+        if (culture == null) return null;
+
+        var property = content.Properties.FirstOrDefault(p => p.Alias == propertyAlias);
+        if (property == null) return null;
+
+        // Check if the property type varies by culture
+        return property.PropertyType.Variations.HasFlag(ContentVariation.Culture) ? culture : null;
+    }
+
     private void SetSimpleProperties(IContent content, string? culture)
     {
         if (content.HasProperty("title"))
-            content.SetValue("title", Context.Faker.Lorem.Sentence(3), culture);
+            content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("description"))
-            content.SetValue("description", Context.Faker.Lorem.Paragraph(), culture);
+            content.SetValue("description", Context.Faker.Lorem.Paragraph(), GetCulture(content, "description", culture));
         if (content.HasProperty("isPublished"))
-            content.SetValue("isPublished", Context.Faker.Random.Bool());
+            content.SetValue("isPublished", Context.Faker.Random.Bool(), GetCulture(content, "isPublished", culture));
     }
 
     private void SetMediumProperties(IContent content, string? culture)
     {
         if (content.HasProperty("title"))
-            content.SetValue("title", Context.Faker.Lorem.Sentence(3), culture);
+            content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("subtitle"))
-            content.SetValue("subtitle", Context.Faker.Lorem.Sentence(5), culture);
+            content.SetValue("subtitle", Context.Faker.Lorem.Sentence(5), GetCulture(content, "subtitle", culture));
         if (content.HasProperty("summary"))
-            content.SetValue("summary", Context.Faker.Lorem.Paragraph(), culture);
+            content.SetValue("summary", Context.Faker.Lorem.Paragraph(), GetCulture(content, "summary", culture));
 
         // Link to random content
         if (content.HasProperty("relatedContent") && Context.CreatedContent.Count > 0)
         {
             var randomContent = Context.CreatedContent[Context.Random.Next(Context.CreatedContent.Count)];
-            content.SetValue("relatedContent", Udi.Create(Constants.UdiEntityType.Document, randomContent.Key).ToString());
+            content.SetValue("relatedContent", Udi.Create(Constants.UdiEntityType.Document, randomContent.Key).ToString(), GetCulture(content, "relatedContent", culture));
         }
 
         // Add block list content
@@ -631,18 +657,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             var blockJson = GenerateSimpleBlockListJson(content, "blocks");
             if (!string.IsNullOrEmpty(blockJson))
-                content.SetValue("blocks", blockJson);
+                content.SetValue("blocks", blockJson, GetCulture(content, "blocks", culture));
         }
     }
 
     private void SetComplexProperties(IContent content, string? culture)
     {
         if (content.HasProperty("title"))
-            content.SetValue("title", Context.Faker.Lorem.Sentence(3), culture);
+            content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("subtitle"))
-            content.SetValue("subtitle", Context.Faker.Lorem.Sentence(5), culture);
+            content.SetValue("subtitle", Context.Faker.Lorem.Sentence(5), GetCulture(content, "subtitle", culture));
         if (content.HasProperty("bodyText"))
-            content.SetValue("bodyText", Context.Faker.Lorem.Paragraphs(3), culture);
+            content.SetValue("bodyText", Context.Faker.Lorem.Paragraphs(3), GetCulture(content, "bodyText", culture));
 
         // Set media picker values
         if (Context.MediaItems.Count > 0)
@@ -650,12 +676,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             if (content.HasProperty("mainImage"))
             {
                 var randomMedia = Context.MediaItems[Context.Random.Next(Context.MediaItems.Count)];
-                content.SetValue("mainImage", GenerateMediaPickerValue(randomMedia));
+                content.SetValue("mainImage", GenerateMediaPickerValue(randomMedia), GetCulture(content, "mainImage", culture));
             }
             if (content.HasProperty("thumbnailImage"))
             {
                 var randomMedia = Context.MediaItems[Context.Random.Next(Context.MediaItems.Count)];
-                content.SetValue("thumbnailImage", GenerateMediaPickerValue(randomMedia));
+                content.SetValue("thumbnailImage", GenerateMediaPickerValue(randomMedia), GetCulture(content, "thumbnailImage", culture));
             }
         }
 
@@ -665,17 +691,17 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             if (content.HasProperty("primaryContent"))
             {
                 var rc = Context.CreatedContent[Context.Random.Next(Context.CreatedContent.Count)];
-                content.SetValue("primaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString());
+                content.SetValue("primaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString(), GetCulture(content, "primaryContent", culture));
             }
             if (content.HasProperty("secondaryContent"))
             {
                 var rc = Context.CreatedContent[Context.Random.Next(Context.CreatedContent.Count)];
-                content.SetValue("secondaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString());
+                content.SetValue("secondaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString(), GetCulture(content, "secondaryContent", culture));
             }
             if (content.HasProperty("tertiaryContent"))
             {
                 var rc = Context.CreatedContent[Context.Random.Next(Context.CreatedContent.Count)];
-                content.SetValue("tertiaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString());
+                content.SetValue("tertiaryContent", Udi.Create(Constants.UdiEntityType.Document, rc.Key).ToString(), GetCulture(content, "tertiaryContent", culture));
             }
         }
 
@@ -684,13 +710,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             var blockJson = GenerateBlockListJsonWithAllComplexities(content, "headerBlocks");
             if (!string.IsNullOrEmpty(blockJson))
-                content.SetValue("headerBlocks", blockJson);
+                content.SetValue("headerBlocks", blockJson, GetCulture(content, "headerBlocks", culture));
         }
         if (content.HasProperty("footerBlocks"))
         {
             var blockJson = GenerateBlockListJsonWithAllComplexities(content, "footerBlocks");
             if (!string.IsNullOrEmpty(blockJson))
-                content.SetValue("footerBlocks", blockJson);
+                content.SetValue("footerBlocks", blockJson, GetCulture(content, "footerBlocks", culture));
         }
 
         // Add block grid
@@ -698,29 +724,32 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             var gridJson = GenerateBlockGridJson(content, "mainGrid");
             if (!string.IsNullOrEmpty(gridJson))
-                content.SetValue("mainGrid", gridJson);
+                content.SetValue("mainGrid", gridJson, GetCulture(content, "mainGrid", culture));
         }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
     /// <summary>
     /// Generates the correct JSON format for Umbraco MediaPicker3.
-    /// Format: [{ "key": "guid", "mediaKey": "media-guid" }]
+    /// Format: [{ "key": "guid", "mediaKey": "media-guid", "mediaTypeAlias": "Image", "crops": [], "focalPoint": null }]
     /// </summary>
     private static string GenerateMediaPickerValue(IMedia media)
     {
-        // MediaPicker3 expects an array of objects with key and mediaKey properties
+        // MediaPicker3 expects an array of objects with these properties
+        // Format: [{"key":"guid","mediaKey":"media-guid","mediaTypeAlias":"Image","crops":[],"focalPoint":null}]
         var mediaPickerItems = new[]
         {
-            new
+            new Dictionary<string, object?>
             {
-                key = Guid.NewGuid().ToString(),
-                mediaKey = media.Key.ToString()
+                ["key"] = Guid.NewGuid().ToString(),
+                ["mediaKey"] = media.Key.ToString(),
+                ["mediaTypeAlias"] = media.ContentType.Alias,
+                ["crops"] = Array.Empty<object>(),
+                ["focalPoint"] = null
             }
         };
         return JsonSerializer.Serialize(mediaPickerItems, JsonOptions);
