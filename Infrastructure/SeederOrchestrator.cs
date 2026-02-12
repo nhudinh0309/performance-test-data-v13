@@ -6,9 +6,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Extensions;
 
 /// <summary>
 /// Notification handler that orchestrates the execution of all seeders in the correct order.
@@ -23,6 +25,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
     private readonly SeederConfiguration _config;
     private readonly SeederStatusService _statusService;
     private readonly IRuntimeState _runtimeState;
+    private readonly DistributedCache _distributedCache;
 
     /// <summary>
     /// Creates a new SeederOrchestrator instance.
@@ -34,7 +37,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         IOptions<SeederConfiguration> config,
         SeederConfigurationValidator validator,
         SeederStatusService statusService,
-        IRuntimeState runtimeState)
+        IRuntimeState runtimeState,
+        DistributedCache distributedCache)
     {
         // Sort seeders by execution order
         _seeders = seeders.OrderBy(s => s.ExecutionOrder).ToList();
@@ -44,6 +48,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         _validator = validator;
         _statusService = statusService;
         _runtimeState = runtimeState;
+        _distributedCache = distributedCache;
     }
 
     /// <summary>
@@ -128,14 +133,13 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
                 }
             }
 
-            // Note: IPublishedSnapshotService was removed in v15.
-            // In v17, the published cache is rebuilt automatically via notifications.
-            // If manual rebuild is needed, users can do it via the Umbraco backoffice.
+            // Reload the in-memory published cache (content, media, domains)
+            // This is equivalent to clicking "Reload Memory Cache" in the backoffice
             if (_options.RebuildCacheAfterSeeding && _runtimeState.Level == RuntimeLevel.Run)
             {
-                _logger.LogInformation("PerformanceTestDataSeeder: Cache rebuild requested. " +
-                    "In Umbraco 17, the cache is updated automatically via notifications. " +
-                    "If needed, rebuild manually via Umbraco backoffice: Settings > Published Status > Rebuild");
+                _logger.LogInformation("PerformanceTestDataSeeder: Reloading published memory cache...");
+                _distributedCache.RefreshAllPublishedSnapshot();
+                _logger.LogInformation("PerformanceTestDataSeeder: Published memory cache reload complete");
             }
 
             totalStopwatch.Stop();
