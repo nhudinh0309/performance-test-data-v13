@@ -5,13 +5,14 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Partial class containing Block List data type creation logic.
 /// </summary>
 public partial class DocumentTypeSeeder
 {
-    private List<IDataType> CreateBlockListDataTypes(int count, CancellationToken cancellationToken)
+    private async Task<List<IDataType>> CreateBlockListDataTypes(int count, CancellationToken cancellationToken)
     {
         var blockListDataTypes = new List<IDataType>();
         var editor = _propertyEditors[Constants.PropertyEditors.Aliases.BlockList];
@@ -22,6 +23,7 @@ public partial class DocumentTypeSeeder
         }
 
         var prefix = GetPrefix(PrefixType.DataType);
+        var userKey = Constants.Security.SuperUserKey;
 
         for (int i = 0; i < count; i++)
         {
@@ -33,7 +35,8 @@ public partial class DocumentTypeSeeder
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
                 var blocks = new List<BlockListConfiguration.BlockConfiguration>();
@@ -45,8 +48,7 @@ public partial class DocumentTypeSeeder
                     {
                         blocks.Add(new BlockListConfiguration.BlockConfiguration
                         {
-                            ContentElementTypeKey = container.Key,
-                            Label = container.Name
+                            ContentElementTypeKey = container.Key
                         });
                     }
                 }
@@ -57,8 +59,7 @@ public partial class DocumentTypeSeeder
                     var simpleElement = _cachedSimpleElements[i % _cachedSimpleElements.Count];
                     blocks.Add(new BlockListConfiguration.BlockConfiguration
                     {
-                        ContentElementTypeKey = simpleElement.Key,
-                        Label = simpleElement.Name
+                        ContentElementTypeKey = simpleElement.Key
                     });
                 }
 
@@ -67,8 +68,7 @@ public partial class DocumentTypeSeeder
                     var mediumElement = _cachedMediumElements[i % _cachedMediumElements.Count];
                     blocks.Add(new BlockListConfiguration.BlockConfiguration
                     {
-                        ContentElementTypeKey = mediumElement.Key,
-                        Label = mediumElement.Name
+                        ContentElementTypeKey = mediumElement.Key
                     });
                 }
 
@@ -77,17 +77,23 @@ public partial class DocumentTypeSeeder
                     var complexElement = _cachedComplexElements[i % _cachedComplexElements.Count];
                     blocks.Add(new BlockListConfiguration.BlockConfiguration
                     {
-                        ContentElementTypeKey = complexElement.Key,
-                        Label = complexElement.Name
+                        ContentElementTypeKey = complexElement.Key
                     });
                 }
 
-                dataType.Configuration = new BlockListConfiguration { Blocks = blocks.ToArray() };
+                var blockListConfig = new BlockListConfiguration { Blocks = blocks.ToArray() };
+                dataType.ConfigurationData = editor.GetConfigurationEditor().FromConfigurationObject(blockListConfig, _serializer);
 
-                _dataTypeService.Save(dataType);
-                blockListDataTypes.Add(dataType);
-
-                LogProgress(i + 1, count, "Block List data types");
+                var result = await _dataTypeService.CreateAsync(dataType, userKey);
+                if (result.Success)
+                {
+                    blockListDataTypes.Add(result.Result);
+                    LogProgress(i + 1, count, "Block List data types");
+                }
+                else
+                {
+                    Logger.LogWarning("Failed to create Block List data type {Name}: {Status}", name, result.Status);
+                }
             }
             catch (Exception ex)
             {

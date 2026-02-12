@@ -1,6 +1,7 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
@@ -11,7 +12,7 @@ public partial class DocumentTypeSeeder
 {
     #region Variant Document Types
 
-    private void CreateVariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
+    private async Task CreateVariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.VariantDocType);
@@ -25,7 +26,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Variant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
                 Context.AddSimpleDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -46,7 +47,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Variant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
                 Context.AddMediumDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -68,7 +69,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Variant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
                 Context.AddComplexDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -87,7 +88,7 @@ public partial class DocumentTypeSeeder
 
     #region Invariant Document Types
 
-    private void CreateInvariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
+    private async Task CreateInvariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.InvariantDocType);
@@ -101,7 +102,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Invariant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
                 Context.AddSimpleDocType(docType);
                 created++;
             }
@@ -121,7 +122,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Invariant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
                 Context.AddMediumDocType(docType);
                 created++;
             }
@@ -142,7 +143,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Invariant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
                 Context.AddComplexDocType(docType);
                 created++;
             }
@@ -160,7 +161,7 @@ public partial class DocumentTypeSeeder
 
     #region Document Type and Template Creation
 
-    private IContentType CreateDocumentTypeWithTemplate(
+    private async Task<IContentType> CreateDocumentTypeWithTemplate(
         string alias,
         string name,
         string complexity,
@@ -169,7 +170,7 @@ public partial class DocumentTypeSeeder
         IDataType? blockGridDataType)
     {
         // Create Template first
-        var template = CreateTemplate(alias, name, complexity);
+        var template = await CreateTemplate(alias, name, complexity);
 
         // Create Document Type
         var docType = new ContentType(_shortStringHelper, -1)
@@ -199,19 +200,19 @@ public partial class DocumentTypeSeeder
         docType.AllowedTemplates = new[] { template };
         docType.SetDefaultTemplate(template);
 
-        _contentTypeService.Save(docType);
+        await _contentTypeService.CreateAsync(docType, Constants.Security.SuperUserKey);
         return docType;
     }
 
-    private ITemplate CreateTemplate(string alias, string name, string complexity)
+    private async Task<ITemplate> CreateTemplate(string alias, string name, string complexity)
     {
         var template = new Template(_shortStringHelper, name, alias)
         {
             Content = GenerateTemplateContent(alias, name, complexity)
         };
 
-        _fileService.SaveTemplate(template);
-        return template;
+        var result = await _templateService.CreateAsync(template, Constants.Security.SuperUserKey);
+        return result.Success ? result.Result : template;
     }
 
     #endregion
