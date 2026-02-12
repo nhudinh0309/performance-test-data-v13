@@ -26,7 +26,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
 {
     private readonly IContentTypeService _contentTypeService;
     private readonly IDataTypeService _dataTypeService;
-    private readonly IFileService _fileService;
+    private readonly ITemplateService _templateService;
     private readonly PropertyEditorCollection _propertyEditors;
     private readonly IConfigurationEditorJsonSerializer _serializer;
     private readonly IShortStringHelper _shortStringHelper;
@@ -45,7 +45,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     public DocumentTypeSeeder(
         IContentTypeService contentTypeService,
         IDataTypeService dataTypeService,
-        IFileService fileService,
+        ITemplateService templateService,
         PropertyEditorCollection propertyEditors,
         IConfigurationEditorJsonSerializer serializer,
         IShortStringHelper shortStringHelper,
@@ -59,7 +59,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     {
         _contentTypeService = contentTypeService;
         _dataTypeService = dataTypeService;
-        _fileService = fileService;
+        _templateService = templateService;
         _propertyEditors = propertyEditors;
         _serializer = serializer;
         _shortStringHelper = shortStringHelper;
@@ -86,7 +86,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     }
 
     /// <inheritdoc />
-    protected override Task SeedAsync(CancellationToken cancellationToken)
+    protected override async Task SeedAsync(CancellationToken cancellationToken)
     {
         var docTypeConfig = Config.DocumentTypes;
 
@@ -106,12 +106,12 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             Logger.LogInformation("[DRY-RUN]   Invariant Doc Types: {Simple} simple, {Medium} medium, {Complex} complex (total: {Total})",
                 docTypeConfig.InvariantDocTypes.Simple, docTypeConfig.InvariantDocTypes.Medium, docTypeConfig.InvariantDocTypes.Complex, totalInvariantDocs);
             // Still load built-in data types for validation
-            EnsureBuiltInDataTypesLoaded();
-            return Task.CompletedTask;
+            await EnsureBuiltInDataTypesLoadedAsync();
+            return;
         }
 
         // Ensure built-in data types are loaded
-        EnsureBuiltInDataTypesLoaded();
+        await EnsureBuiltInDataTypesLoadedAsync();
 
         List<IDataType> blockListDataTypes;
         List<IDataType> blockGridDataTypes;
@@ -120,7 +120,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         Logger.LogInformation("Phase 1: Creating Element Types...");
         using (var scope = CreateScopedBatch())
         {
-            CreateElementTypes(docTypeConfig.ElementTypes, cancellationToken);
+            await CreateElementTypes(docTypeConfig.ElementTypes, cancellationToken);
             scope.Complete();
         }
 
@@ -133,7 +133,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             Logger.LogInformation("Phase 2: Creating Nested Container Elements (depth: {Depth})...", docTypeConfig.NestingDepth);
             using (var scope = CreateScopedBatch())
             {
-                CreateNestedContainerElements(docTypeConfig.NestingDepth, cancellationToken);
+                await CreateNestedContainerElements(docTypeConfig.NestingDepth, cancellationToken);
                 scope.Complete();
             }
         }
@@ -142,7 +142,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         Logger.LogInformation("Phase 3: Creating Block List data types...");
         using (var scope = CreateScopedBatch())
         {
-            blockListDataTypes = CreateBlockListDataTypes(docTypeConfig.BlockList, cancellationToken);
+            blockListDataTypes = await CreateBlockListDataTypes(docTypeConfig.BlockList, cancellationToken);
             scope.Complete();
         }
 
@@ -150,7 +150,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         Logger.LogInformation("Phase 4: Creating Block Grid data types...");
         using (var scope = CreateScopedBatch())
         {
-            blockGridDataTypes = CreateBlockGridDataTypes(docTypeConfig.BlockGrid, cancellationToken);
+            blockGridDataTypes = await CreateBlockGridDataTypes(docTypeConfig.BlockGrid, cancellationToken);
             scope.Complete();
         }
 
@@ -158,7 +158,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         Logger.LogInformation("Phase 5: Creating Variant Document Types with Templates...");
         using (var scope = CreateScopedBatch())
         {
-            CreateVariantDocumentTypes(docTypeConfig.VariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+            await CreateVariantDocumentTypes(docTypeConfig.VariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
             scope.Complete();
         }
 
@@ -166,7 +166,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         Logger.LogInformation("Phase 6: Creating Invariant Document Types with Templates...");
         using (var scope = CreateScopedBatch())
         {
-            CreateInvariantDocumentTypes(docTypeConfig.InvariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
+            await CreateInvariantDocumentTypes(docTypeConfig.InvariantDocTypes, blockListDataTypes, blockGridDataTypes, cancellationToken);
             scope.Complete();
         }
 
@@ -180,27 +180,31 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             blockListDataTypes.Count,
             blockGridDataTypes.Count,
             docTypeConfig.TotalDocTypes);
-
-        return Task.CompletedTask;
     }
 
     #region Data Type Helpers
 
-    private void EnsureBuiltInDataTypesLoaded()
+    private async Task EnsureBuiltInDataTypesLoadedAsync()
     {
         if (Context.TextstringDataType == null)
         {
-            Context.TextstringDataType = _dataTypeService.GetDataType(Constants.DataTypes.Textbox);
-            Context.TextareaDataType = _dataTypeService.GetDataType(Constants.DataTypes.Textarea);
-            Context.TrueFalseDataType = _dataTypeService.GetDataType(Constants.DataTypes.Boolean);
-            Context.LabelDataType = _dataTypeService.GetDataType(Constants.DataTypes.LabelString);
-            Context.UploadDataType = _dataTypeService.GetDataType(Constants.DataTypes.Upload);
+            var allDataTypes = (await _dataTypeService.GetAllAsync(Array.Empty<Guid>())).ToList();
 
-            var allDataTypes = _dataTypeService.GetAll().ToList();
+            Context.TextstringDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Textbox);
+            Context.TextareaDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Textarea);
+            Context.TrueFalseDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Boolean);
+            Context.LabelDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.LabelString);
+            Context.UploadDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Upload);
             Context.ContentPickerDataType = allDataTypes.FirstOrDefault(d =>
                 d.EditorAlias == Constants.PropertyEditors.Aliases.ContentPicker);
             Context.MediaPickerDataType = allDataTypes.FirstOrDefault(d =>
                 d.EditorAlias == Constants.PropertyEditors.Aliases.MediaPicker3);
+
+            // Build data type cache for other seeders
+            foreach (var dt in allDataTypes)
+            {
+                Context.DataTypeCache[dt.Id] = dt;
+            }
         }
 
         // Validate required data types are available
