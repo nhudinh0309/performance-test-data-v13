@@ -1,13 +1,14 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using Microsoft.AspNetCore.Mvc;
-using Umbraco.Cms.Web.Common.Controllers;
 
 /// <summary>
 /// API controller for checking seeder status.
 /// GET /umbraco/api/seederstatus/status
 /// </summary>
-public class SeederStatusController : UmbracoApiController
+[ApiController]
+[Route("umbraco/api/seederstatus")]
+public class SeederStatusController : Controller
 {
     private readonly SeederStatusService _statusService;
 
