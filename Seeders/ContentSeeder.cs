@@ -22,7 +22,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly IContentService _contentService;
     private readonly IContentTypeService _contentTypeService;
     private readonly IDataTypeService _dataTypeService;
-    private readonly ILocalizationService _localizationService;
+    private readonly ILanguageService _languageService;
     private readonly IDomainService _domainService;
 
     // Performance caches to avoid repeated lookups (cleared at start of each seeding run)
@@ -31,8 +31,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockListConfiguration?> _blockListConfigCache = new();
     private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockGridConfiguration?> _blockGridConfigCache = new();
 
-    // Batch publishing: tracks content items pending publication
-    private readonly List<(IContent Content, bool IsVariant)> _pendingPublishContent = new();
+    // Batch publishing: tracks content items pending publication with their target culture
+    private readonly List<(IContent Content, bool IsVariant, string? Culture)> _pendingPublishContent = new();
 
     // Track current section for FirstSection publish mode
     private int _currentSection = 0;
@@ -57,7 +57,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         IContentService contentService,
         IContentTypeService contentTypeService,
         IDataTypeService dataTypeService,
-        ILocalizationService localizationService,
+        ILanguageService languageService,
         IDomainService domainService,
         IScopeProvider scopeProvider,
         ILogger<ContentSeeder> logger,
@@ -70,7 +70,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         _contentService = contentService;
         _contentTypeService = contentTypeService;
         _dataTypeService = dataTypeService;
-        _localizationService = localizationService;
+        _languageService = languageService;
         _domainService = domainService;
     }
 
@@ -148,7 +148,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private void LoadLanguagesIfNeeded()
     {
         if (Context.Languages.Count > 0) return;
-        Context.SetLanguages(_localizationService.GetAllLanguages());
+        Context.SetLanguages(_languageService.GetAllAsync().GetAwaiter().GetResult());
     }
 
     private void LoadMediaItemsIfNeeded()
@@ -203,8 +203,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         batchCount = 0;
                     }
 
+                    // Assign one culture per section (round-robin through available languages)
+                    var sectionCulture = Context.Languages.Count > 0
+                        ? Context.Languages[(section - 1) % Context.Languages.Count].IsoCode
+                        : null;
+
                     var sectionDocType = GetRandomDocType("simple");
-                    var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple");
+                    var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple", sectionCulture);
                     if (sectionContent != null) Context.AddContent(sectionContent);
                     simpleCreated++;
                     totalCreated++;
@@ -217,7 +222,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
                         var catDocType = GetRandomDocType("simple");
                         var parentId = sectionContent?.Id ?? -1;
-                        var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple");
+                        var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple", sectionCulture);
                         if (catContent != null) Context.AddContent(catContent);
                         simpleCreated++;
                         totalCreated++;
@@ -247,7 +252,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                             }
 
                             var catParentId = catContent?.Id ?? -1;
-                            var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catParentId, docType, complexity);
+                            var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catParentId, docType, complexity, sectionCulture);
                             if (pageContent != null) Context.AddContent(pageContent);
                             totalCreated++;
                             batchCount++;
@@ -269,7 +274,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                     var detailDocType = GetRandomDocType("simple");
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple");
+                                        pageParentId, detailDocType, "simple", sectionCulture);
                                     if (detailContent != null) Context.AddContent(detailContent);
                                     simpleCreated++;
                                     totalCreated++;
@@ -327,7 +332,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (Options.PublishMode == PublishMode.None || _pendingPublishContent.Count == 0)
             return;
 
-        var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
         int totalToPublish = _pendingPublishContent.Count;
         int published = 0;
         int failed = 0;
@@ -344,13 +348,16 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             // Don't suppress notifications when publishing - cache needs to be updated
             using var scope = CreateScopedBatch(suppressNotifications: false);
 
-            foreach (var (content, isVariant) in batch)
+            foreach (var (content, isVariant, culture) in batch)
             {
                 try
                 {
-                    var result = isVariant
-                        ? _contentService.SaveAndPublish(content, cultures)
-                        : _contentService.SaveAndPublish(content);
+                    // Publish only in the content's specific culture (not all cultures)
+                    var publishCultures = isVariant && culture != null
+                        ? new[] { culture }
+                        : Array.Empty<string>();
+
+                    var result = _contentService.Publish(content, publishCultures);
 
                     if (result.Success)
                     {
@@ -359,8 +366,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                     else
                     {
                         failed++;
-                        Logger.LogDebug("Failed to publish content {Name}: {Messages}",
-                            content.Name ?? "Unknown",
+                        Logger.LogDebug("Failed to publish content {Name} in {Culture}: {Messages}",
+                            content.Name ?? "Unknown", culture ?? "invariant",
                             string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
                     }
                 }
@@ -471,12 +478,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         };
     }
 
-    private IContent? CreateContent(string name, int parentId, IContentType docType, string complexity)
+    private IContent? CreateContent(string name, int parentId, IContentType docType, string complexity, string? sectionCulture = null)
     {
         // DryRun mode - log what would be created but don't persist
         if (IsDryRun)
         {
-            LogDryRun("Content", name, $"type={docType.Alias}, complexity={complexity}, parent={parentId}");
+            LogDryRun("Content", name, $"type={docType.Alias}, complexity={complexity}, parent={parentId}, culture={sectionCulture ?? "invariant"}");
             return null;
         }
 
@@ -494,70 +501,63 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         };
         var useBatchPublishing = shouldPublish && Options.PublishBatchSize > 0;
 
-        if (isVariant)
+        if (isVariant && sectionCulture != null)
         {
-            // For variant content, set name and properties for ALL cultures
-            foreach (var language in Context.Languages)
-            {
-                var culture = language.IsoCode;
-                content.SetCultureName($"{name} ({culture})", culture);
+            // For variant content, set name and properties only for the section's culture
+            content.SetCultureName($"{name} ({sectionCulture})", sectionCulture);
+            SetPropertiesForCulture(content, complexity, sectionCulture);
 
-                SetPropertiesForCulture(content, complexity, culture);
-            }
+            // Save content first
+            _contentService.Save(content);
 
-            // Save content (publish later if batch mode, or now if immediate mode)
-            if (shouldPublish && !useBatchPublishing)
-            {
-                // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
-                var cultures = Context.Languages.Select(l => l.IsoCode).ToArray();
-                var result = _contentService.SaveAndPublish(content, cultures);
-                if (!result.Success)
-                {
-                    Logger.LogWarning("Failed to publish variant content {Name}: {Messages}",
-                        content.Name ?? "Unknown", string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
-                }
-            }
-            else
-            {
-                // Save without publishing (will batch publish later if enabled)
-                _contentService.Save(content);
-
-                if (useBatchPublishing)
-                {
-                    _pendingPublishContent.Add((content, true));
-                }
-            }
-
-            // Assign domain to root content
+            // Assign domain to root content BEFORE publishing to avoid routing warnings
             if (isRootContent)
             {
-                AssignDomainsToContent(content);
+                AssignDomainToContentAsync(content, sectionCulture).GetAwaiter().GetResult();
+            }
+
+            if (shouldPublish && !useBatchPublishing)
+            {
+                var result = _contentService.Publish(content, new[] { sectionCulture });
+                if (!result.Success)
+                {
+                    Logger.LogWarning("Failed to publish variant content {Name} in {Culture}: {Messages}",
+                        content.Name ?? "Unknown", sectionCulture,
+                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                }
+            }
+            else if (useBatchPublishing)
+            {
+                _pendingPublishContent.Add((content, true, sectionCulture));
             }
         }
         else
         {
-            // For invariant content
+            // For invariant content (or variant without a section culture)
             SetPropertiesForCulture(content, complexity, null);
+
+            // Save content first
+            _contentService.Save(content);
+
+            // Assign domains to root content BEFORE publishing to avoid routing warnings
+            if (isRootContent && sectionCulture != null)
+            {
+                AssignDomainToContentAsync(content, sectionCulture).GetAwaiter().GetResult();
+            }
 
             if (shouldPublish && !useBatchPublishing)
             {
-                // Immediate publish mode (legacy behavior when PublishBatchSize = 0)
-                var result = _contentService.SaveAndPublish(content);
+                var result = _contentService.Publish(content, Array.Empty<string>());
                 if (!result.Success)
                 {
                     Logger.LogWarning("Failed to publish invariant content {Name}: {Messages}",
-                        content.Name ?? "Unknown", string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
+                        content.Name ?? "Unknown",
+                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
                 }
             }
-            else
+            else if (useBatchPublishing)
             {
-                // Save without publishing (will batch publish later if enabled)
-                _contentService.Save(content);
-
-                if (useBatchPublishing)
-                {
-                    _pendingPublishContent.Add((content, false));
-                }
+                _pendingPublishContent.Add((content, false, null));
             }
         }
 
@@ -580,7 +580,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
     }
 
-    private void AssignDomainsToContent(IContent content)
+    /// <summary>
+    /// Assigns a single domain for the specified culture to root content using the v17 async API.
+    /// Each root section gets one domain matching its culture.
+    /// </summary>
+    private async Task AssignDomainToContentAsync(IContent content, string culture)
     {
         // Skip domain assignment if configured
         if (Options.SkipContentDomains)
@@ -589,27 +593,50 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             return;
         }
 
-        var existingDomains = _domainService.GetAssignedDomains(content.Id, false).ToList();
-        var domainSuffix = Options.DomainSuffix;
+        var existingDomains = (await _domainService.GetAssignedDomainsAsync(content.Key, false)).ToList();
 
-        foreach (var language in Context.Languages)
+        // Skip if domain for this culture already exists
+        if (existingDomains.Any(d => string.Equals(d.LanguageIsoCode, culture, StringComparison.OrdinalIgnoreCase)))
         {
-            if (existingDomains.Any(d => d.LanguageIsoCode == language.IsoCode))
-                continue;
-
-            var domainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}";
-
-            var domain = new UmbracoDomain(domainName)
-            {
-                RootContentId = content.Id,
-                LanguageIsoCode = language.IsoCode
-            };
-
-            _domainService.Save(domain);
+            Logger.LogDebug("Domain for culture {Culture} already exists on '{Name}'", culture, content.Name);
+            return;
         }
 
-        Logger.LogDebug("Assigned {Count} domains to root content '{Name}' (ID: {Id}) with suffix '{Suffix}'",
-            Context.Languages.Count, content.Name, content.Id, domainSuffix);
+        var domainSuffix = Options.DomainSuffix;
+        var domainName = $"test-{content.Id}-{culture.ToLower()}.{domainSuffix}";
+
+        // Build the complete domain list (existing + new)
+        var allDomains = existingDomains
+            .Select(d => new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
+            {
+                DomainName = d.DomainName,
+                IsoCode = d.LanguageIsoCode!
+            })
+            .ToList();
+
+        allDomains.Add(new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
+        {
+            DomainName = domainName,
+            IsoCode = culture
+        });
+
+        var updateModel = new Umbraco.Cms.Core.Models.ContentEditing.DomainsUpdateModel
+        {
+            DefaultIsoCode = culture,
+            Domains = allDomains
+        };
+
+        var result = await _domainService.UpdateDomainsAsync(content.Key, updateModel);
+        if (result.Success)
+        {
+            Logger.LogDebug("Assigned domain '{Domain}' ({Culture}) to root content '{Name}' (ID: {Id})",
+                domainName, culture, content.Name, content.Id);
+        }
+        else
+        {
+            Logger.LogWarning("Failed to assign domain for culture {Culture} to '{Name}': {Status}",
+                culture, content.Name, result.Status);
+        }
     }
 
     /// <summary>
@@ -766,17 +793,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
         if (elementType == null) return null;
 
-        var contentUdi = Guid.NewGuid().ToString("N");
-        var contentData = BuildElementContentDataObject(elementType, simpleBlock.ContentElementTypeKey, contentUdi);
+        var contentKey = Guid.NewGuid();
+        var contentData = BuildElementContentDataObject(elementType, simpleBlock.ContentElementTypeKey, contentKey);
 
         var blockListValue = new
         {
             layout = new Dictionary<string, object>
             {
-                ["Umbraco.BlockList"] = new[] { new { contentUdi = $"umb://element/{contentUdi}" } }
+                ["Umbraco.BlockList"] = new[] { BuildBlockListLayoutItem(contentKey) }
             },
             contentData = new[] { contentData },
-            settingsData = Array.Empty<object>()
+            settingsData = Array.Empty<object>(),
+            expose = new[] { BuildExposeEntry(contentKey) }
         };
 
         return JsonSerializer.Serialize(blockListValue, JsonOptions);
@@ -787,8 +815,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var blockConfig = GetBlockListConfiguration(content, propertyAlias);
         if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
 
-        var layoutItems = new List<object>();
+        var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
+        var exposeItems = new List<Dictionary<string, object?>>();
 
         // Add nested block element first (if available)
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
@@ -797,10 +826,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
-                var contentUdi = Guid.NewGuid().ToString("N");
-                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentUdi, 1);
+                var contentKey = Guid.NewGuid();
+                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentKey, 1);
                 contentDataItems.Add(nestedContentData);
-                layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+                layoutItems.Add(BuildBlockListLayoutItem(contentKey));
+                exposeItems.Add(BuildExposeEntry(contentKey));
             }
         }
 
@@ -813,9 +843,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
-            var contentUdi = Guid.NewGuid().ToString("N");
-            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentUdi));
-            layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+            var contentKey = Guid.NewGuid();
+            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentKey));
+            layoutItems.Add(BuildBlockListLayoutItem(contentKey));
+            exposeItems.Add(BuildExposeEntry(contentKey));
         }
 
         if (layoutItems.Count == 0) return null;
@@ -827,7 +858,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 ["Umbraco.BlockList"] = layoutItems
             },
             contentData = contentDataItems,
-            settingsData = Array.Empty<object>()
+            settingsData = Array.Empty<object>(),
+            expose = exposeItems
         };
 
         return JsonSerializer.Serialize(blockListValue, JsonOptions);
@@ -838,8 +870,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var blockConfig = GetBlockGridConfiguration(content, propertyAlias);
         if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
 
-        var layoutItems = new List<object>();
+        var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
+        var exposeItems = new List<Dictionary<string, object?>>();
 
         // Add nested block element first (if available)
         var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
@@ -848,16 +881,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
-                var contentUdi = Guid.NewGuid().ToString("N");
-                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentUdi, 1);
+                var contentKey = Guid.NewGuid();
+                var nestedContentData = BuildNestedBlockContentDataObject(elementType, nestedBlock.ContentElementTypeKey, contentKey, 1);
                 contentDataItems.Add(nestedContentData);
-                layoutItems.Add(new
-                {
-                    contentUdi = $"umb://element/{contentUdi}",
-                    columnSpan = DefaultGridColumnSpan,
-                    rowSpan = DefaultGridRowSpan,
-                    areas = Array.Empty<object>()
-                });
+                layoutItems.Add(BuildBlockGridLayoutItem(contentKey));
+                exposeItems.Add(BuildExposeEntry(contentKey));
             }
         }
 
@@ -870,15 +898,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
-            var contentUdi = Guid.NewGuid().ToString("N");
-            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentUdi));
-            layoutItems.Add(new
-            {
-                contentUdi = $"umb://element/{contentUdi}",
-                columnSpan = DefaultGridColumnSpan,
-                rowSpan = DefaultGridRowSpan,
-                areas = Array.Empty<object>()
-            });
+            var contentKey = Guid.NewGuid();
+            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentKey));
+            layoutItems.Add(BuildBlockGridLayoutItem(contentKey));
+            exposeItems.Add(BuildExposeEntry(contentKey));
         }
 
         if (layoutItems.Count == 0) return null;
@@ -890,40 +913,67 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 ["Umbraco.BlockGrid"] = layoutItems
             },
             contentData = contentDataItems,
-            settingsData = Array.Empty<object>()
+            settingsData = Array.Empty<object>(),
+            expose = exposeItems
         };
 
         return JsonSerializer.Serialize(blockGridValue, JsonOptions);
     }
 
-    private Dictionary<string, object> BuildElementContentDataObject(IContentType elementType, Guid elementTypeKey, string contentUdi)
+    /// <summary>
+    /// Builds content data for a block element using the v17 format.
+    /// Uses key-based references and values array instead of flat properties.
+    /// </summary>
+    private Dictionary<string, object> BuildElementContentDataObject(IContentType elementType, Guid elementTypeKey, Guid contentKey)
     {
-        var properties = new Dictionary<string, object>
+        var values = BuildBlockValuesArray(elementType);
+
+        return new Dictionary<string, object>
         {
-            ["contentTypeKey"] = elementTypeKey.ToString(),
-            ["udi"] = $"umb://element/{contentUdi}"
+            ["key"] = contentKey,
+            ["contentTypeKey"] = elementTypeKey,
+            ["values"] = values
         };
+    }
+
+    /// <summary>
+    /// Builds the values array for a block element's properties in v17 format.
+    /// Each entry contains editorAlias, alias, culture, segment, and value.
+    /// </summary>
+    private List<Dictionary<string, object?>> BuildBlockValuesArray(IContentType elementType)
+    {
+        var values = new List<Dictionary<string, object?>>();
 
         foreach (var group in elementType.PropertyGroups)
         {
             if (group.PropertyTypes == null) continue;
             foreach (var propType in group.PropertyTypes)
             {
-                var propValue = GeneratePropertyValue(propType);
-                if (propValue != null)
-                    properties[propType.Alias] = propValue;
+                var (editorAlias, propValue) = GenerateBlockPropertyValue(propType);
+                if (editorAlias != null && propValue != null)
+                {
+                    values.Add(new Dictionary<string, object?>
+                    {
+                        ["editorAlias"] = editorAlias,
+                        ["alias"] = propType.Alias,
+                        ["culture"] = null,
+                        ["segment"] = null,
+                        ["value"] = propValue
+                    });
+                }
             }
         }
 
-        return properties;
+        return values;
     }
 
     /// <summary>
     /// Builds content data for nested block elements, recursively generating child blocks.
     /// Uses configured NestingDepth from DocumentTypes configuration.
+    /// Uses v17 format with key-based references and values array.
     /// </summary>
     private Dictionary<string, object> BuildNestedBlockContentDataObject(
-        IContentType elementType, Guid elementTypeKey, string contentUdi, int currentDepth, int? maxDepth = null)
+        IContentType elementType, Guid elementTypeKey, Guid contentKey, int currentDepth, int? maxDepth = null)
     {
         // Use configured NestingDepth if not explicitly provided
         var effectiveMaxDepth = maxDepth ?? Config.DocumentTypes.NestingDepth;
@@ -936,16 +986,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 currentDepth, effectiveMaxDepth);
             return new Dictionary<string, object>
             {
-                ["contentTypeKey"] = elementTypeKey.ToString(),
-                ["udi"] = $"umb://element/{contentUdi}"
+                ["key"] = contentKey,
+                ["contentTypeKey"] = elementTypeKey,
+                ["values"] = new List<Dictionary<string, object?>>()
             };
         }
 
-        var properties = new Dictionary<string, object>
-        {
-            ["contentTypeKey"] = elementTypeKey.ToString(),
-            ["udi"] = $"umb://element/{contentUdi}"
-        };
+        var values = new List<Dictionary<string, object?>>();
 
         foreach (var group in elementType.PropertyGroups)
         {
@@ -957,22 +1004,45 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 {
                     var nestedBlockListJson = GenerateNestedBlockListJson(propType, currentDepth + 1, effectiveMaxDepth);
                     if (!string.IsNullOrEmpty(nestedBlockListJson))
-                        properties[propType.Alias] = nestedBlockListJson;
+                    {
+                        values.Add(new Dictionary<string, object?>
+                        {
+                            ["editorAlias"] = Constants.PropertyEditors.Aliases.BlockList,
+                            ["alias"] = propType.Alias,
+                            ["culture"] = null,
+                            ["segment"] = null,
+                            ["value"] = nestedBlockListJson
+                        });
+                    }
                 }
                 else
                 {
-                    var propValue = GeneratePropertyValue(propType);
-                    if (propValue != null)
-                        properties[propType.Alias] = propValue;
+                    var (editorAlias, propValue) = GenerateBlockPropertyValue(propType);
+                    if (editorAlias != null && propValue != null)
+                    {
+                        values.Add(new Dictionary<string, object?>
+                        {
+                            ["editorAlias"] = editorAlias,
+                            ["alias"] = propType.Alias,
+                            ["culture"] = null,
+                            ["segment"] = null,
+                            ["value"] = propValue
+                        });
+                    }
                 }
             }
         }
 
-        return properties;
+        return new Dictionary<string, object>
+        {
+            ["key"] = contentKey,
+            ["contentTypeKey"] = elementTypeKey,
+            ["values"] = values
+        };
     }
 
     /// <summary>
-    /// Generates BlockList JSON for nested blocks property.
+    /// Generates BlockList JSON for nested blocks property using v17 format.
     /// </summary>
     private string? GenerateNestedBlockListJson(IPropertyType propType, int currentDepth, int maxDepth)
     {
@@ -986,19 +1056,21 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         // Get the BlockList configuration for this property
         if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
         {
-            dataType = _dataTypeService.GetDataType(propType.DataTypeId);
+            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
+                .FirstOrDefault(d => d.Id == propType.DataTypeId);
             if (dataType != null)
                 Context.DataTypeCache[propType.DataTypeId] = dataType;
         }
 
-        if (dataType?.Configuration is not BlockListConfiguration blockConfig)
+        if (dataType?.ConfigurationObject is not BlockListConfiguration blockConfig)
             return null;
 
         if (blockConfig.Blocks == null || blockConfig.Blocks.Length == 0)
             return null;
 
-        var layoutItems = new List<object>();
+        var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
+        var exposeItems = new List<Dictionary<string, object?>>();
 
         // Check if there are more nested containers at this level
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
@@ -1007,11 +1079,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
-                var contentUdi = Guid.NewGuid().ToString("N");
+                var contentKey = Guid.NewGuid();
                 var nestedContentData = BuildNestedBlockContentDataObject(
-                    elementType, nestedBlock.ContentElementTypeKey, contentUdi, currentDepth, maxDepth);
+                    elementType, nestedBlock.ContentElementTypeKey, contentKey, currentDepth, maxDepth);
                 contentDataItems.Add(nestedContentData);
-                layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+                layoutItems.Add(BuildBlockListLayoutItem(contentKey));
+                exposeItems.Add(BuildExposeEntry(contentKey));
             }
         }
 
@@ -1024,9 +1097,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
-            var contentUdi = Guid.NewGuid().ToString("N");
-            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentUdi));
-            layoutItems.Add(new { contentUdi = $"umb://element/{contentUdi}" });
+            var contentKey = Guid.NewGuid();
+            contentDataItems.Add(BuildElementContentDataObject(elementType, block.ContentElementTypeKey, contentKey));
+            layoutItems.Add(BuildBlockListLayoutItem(contentKey));
+            exposeItems.Add(BuildExposeEntry(contentKey));
         }
 
         if (layoutItems.Count == 0) return null;
@@ -1038,25 +1112,31 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 ["Umbraco.BlockList"] = layoutItems
             },
             contentData = contentDataItems,
-            settingsData = Array.Empty<object>()
+            settingsData = Array.Empty<object>(),
+            expose = exposeItems
         };
 
         return JsonSerializer.Serialize(blockListValue, JsonOptions);
     }
 
-    private object? GeneratePropertyValue(IPropertyType propType)
+    /// <summary>
+    /// Generates a block property value along with its editor alias for the v17 block value format.
+    /// Returns (editorAlias, value) tuple where editorAlias is needed for the values array.
+    /// </summary>
+    private (string? editorAlias, object? value) GenerateBlockPropertyValue(IPropertyType propType)
     {
         // Use cached data types if available
         if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
         {
-            dataType = _dataTypeService.GetDataType(propType.DataTypeId);
+            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
+                .FirstOrDefault(d => d.Id == propType.DataTypeId);
             if (dataType != null)
                 Context.DataTypeCache[propType.DataTypeId] = dataType;
         }
 
-        if (dataType == null) return string.Empty;
+        if (dataType == null) return (null, null);
 
-        return dataType.EditorAlias switch
+        object? value = dataType.EditorAlias switch
         {
             Constants.PropertyEditors.Aliases.TextBox => Context.Faker.Lorem.Sentence(3),
             Constants.PropertyEditors.Aliases.TextArea => Context.Faker.Lorem.Paragraph(),
@@ -1067,6 +1147,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             Constants.PropertyEditors.Aliases.ContentPicker => GenerateContentPickerValueForBlock(),
             _ => string.Empty
         };
+
+        return (dataType.EditorAlias, value);
     }
 
     private object? GenerateMediaPickerValueForBlock()
@@ -1125,12 +1207,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         // Use data type cache from context
         if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
         {
-            dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
+            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
+                .FirstOrDefault(d => d.Id == propertyType.DataTypeId);
             if (dataType != null)
                 Context.DataTypeCache[propertyType.DataTypeId] = dataType;
         }
 
-        var config = dataType?.Configuration as BlockListConfiguration;
+        var config = dataType?.ConfigurationObject as BlockListConfiguration;
         _blockListConfigCache[cacheKey] = config;
         return config;
     }
@@ -1160,12 +1243,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         // Use data type cache from context
         if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
         {
-            dataType = _dataTypeService.GetDataType(propertyType.DataTypeId);
+            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
+                .FirstOrDefault(d => d.Id == propertyType.DataTypeId);
             if (dataType != null)
                 Context.DataTypeCache[propertyType.DataTypeId] = dataType;
         }
 
-        var config = dataType?.Configuration as BlockGridConfiguration;
+        var config = dataType?.ConfigurationObject as BlockGridConfiguration;
         _blockGridConfigCache[cacheKey] = config;
         return config;
     }
@@ -1179,6 +1263,42 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
         return contentType.PropertyTypes.FirstOrDefault(p => p.Alias == alias);
     }
+
+    #region Block Value Format Helpers (v17)
+
+    /// <summary>
+    /// Builds a BlockList layout item in v17 format using contentKey instead of contentUdi.
+    /// </summary>
+    private static Dictionary<string, object?> BuildBlockListLayoutItem(Guid contentKey) => new()
+    {
+        ["contentKey"] = contentKey,
+        ["settingsKey"] = null
+    };
+
+    /// <summary>
+    /// Builds a BlockGrid layout item in v17 format with columnSpan, rowSpan, and areas.
+    /// </summary>
+    private Dictionary<string, object?> BuildBlockGridLayoutItem(Guid contentKey) => new()
+    {
+        ["contentKey"] = contentKey,
+        ["settingsKey"] = null,
+        ["columnSpan"] = DefaultGridColumnSpan,
+        ["rowSpan"] = DefaultGridRowSpan,
+        ["areas"] = Array.Empty<object>()
+    };
+
+    /// <summary>
+    /// Builds an expose entry for invariant block content in v17 format.
+    /// Each block must have an expose entry to be visible.
+    /// </summary>
+    private static Dictionary<string, object?> BuildExposeEntry(Guid contentKey) => new()
+    {
+        ["contentKey"] = contentKey,
+        ["culture"] = null,
+        ["segment"] = null
+    };
+
+    #endregion
 
     #region Block Finding Helpers
 
