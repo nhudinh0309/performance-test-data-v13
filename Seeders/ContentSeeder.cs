@@ -31,8 +31,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockListConfiguration?> _blockListConfigCache = new();
     private readonly Dictionary<(int contentTypeId, string propertyAlias), BlockGridConfiguration?> _blockGridConfigCache = new();
 
-    // Batch publishing: tracks content items pending publication with their target culture
-    private readonly List<(IContent Content, bool IsVariant, string? Culture)> _pendingPublishContent = new();
+    // Root content items needing domain assignment after creation scopes commit
+    private readonly List<IContent> _rootContentForDomains = new();
+
+    // Batch publishing: tracks content items pending publication
+    private readonly List<(IContent Content, bool IsVariant)> _pendingPublishContent = new();
 
     // Track current section for FirstSection publish mode
     private int _currentSection = 0;
@@ -46,6 +49,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         _contentTypeByKeyCache.Clear();
         _blockListConfigCache.Clear();
         _blockGridConfigCache.Clear();
+        _rootContentForDomains.Clear();
         _pendingPublishContent.Clear();
         Logger.LogDebug("Cleared ContentSeeder caches");
     }
@@ -203,13 +207,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         batchCount = 0;
                     }
 
-                    // Assign one culture per section (round-robin through available languages)
-                    var sectionCulture = Context.Languages.Count > 0
-                        ? Context.Languages[(section - 1) % Context.Languages.Count].IsoCode
-                        : null;
-
                     var sectionDocType = GetRandomDocType("simple");
-                    var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple", sectionCulture);
+                    var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple");
                     if (sectionContent != null) Context.AddContent(sectionContent);
                     simpleCreated++;
                     totalCreated++;
@@ -222,7 +221,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
                         var catDocType = GetRandomDocType("simple");
                         var parentId = sectionContent?.Id ?? -1;
-                        var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple", sectionCulture);
+                        var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple");
                         if (catContent != null) Context.AddContent(catContent);
                         simpleCreated++;
                         totalCreated++;
@@ -252,7 +251,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                             }
 
                             var catParentId = catContent?.Id ?? -1;
-                            var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catParentId, docType, complexity, sectionCulture);
+                            var pageContent = CreateContent($"Page_{section}_{cat}_{page}", catParentId, docType, complexity);
                             if (pageContent != null) Context.AddContent(pageContent);
                             totalCreated++;
                             batchCount++;
@@ -274,7 +273,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                     var detailDocType = GetRandomDocType("simple");
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple", sectionCulture);
+                                        pageParentId, detailDocType, "simple");
                                     if (detailContent != null) Context.AddContent(detailContent);
                                     simpleCreated++;
                                     totalCreated++;
@@ -313,7 +312,18 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             currentScope?.Dispose();
         }
 
-        // Publish all pending content at the end (after all saves are complete)
+        // Assign domains to all root content AFTER creation scopes are committed
+        if (_rootContentForDomains.Count > 0)
+        {
+            Logger.LogInformation("Assigning domains to {Count} root content items...", _rootContentForDomains.Count);
+            foreach (var rootContent in _rootContentForDomains)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AssignAllDomainsToContentAsync(rootContent).GetAwaiter().GetResult();
+            }
+        }
+
+        // Publish all pending content (after domains are assigned)
         if (_pendingPublishContent.Count > 0)
         {
             Logger.LogInformation("Publishing {Count} content items...", _pendingPublishContent.Count);
@@ -348,13 +358,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             // Don't suppress notifications when publishing - cache needs to be updated
             using var scope = CreateScopedBatch(suppressNotifications: false);
 
-            foreach (var (content, isVariant, culture) in batch)
+            foreach (var (content, isVariant) in batch)
             {
                 try
                 {
-                    // Publish only in the content's specific culture (not all cultures)
-                    var publishCultures = isVariant && culture != null
-                        ? new[] { culture }
+                    var publishCultures = isVariant
+                        ? Context.Languages.Select(l => l.IsoCode).ToArray()
                         : Array.Empty<string>();
 
                     var result = _contentService.Publish(content, publishCultures);
@@ -366,8 +375,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                     else
                     {
                         failed++;
-                        Logger.LogDebug("Failed to publish content {Name} in {Culture}: {Messages}",
-                            content.Name ?? "Unknown", culture ?? "invariant",
+                        Logger.LogDebug("Failed to publish content {Name}: {Messages}",
+                            content.Name ?? "Unknown",
                             string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
                     }
                 }
@@ -478,12 +487,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         };
     }
 
-    private IContent? CreateContent(string name, int parentId, IContentType docType, string complexity, string? sectionCulture = null)
+    private IContent? CreateContent(string name, int parentId, IContentType docType, string complexity)
     {
         // DryRun mode - log what would be created but don't persist
         if (IsDryRun)
         {
-            LogDryRun("Content", name, $"type={docType.Alias}, complexity={complexity}, parent={parentId}, culture={sectionCulture ?? "invariant"}");
+            LogDryRun("Content", name, $"type={docType.Alias}, complexity={complexity}, parent={parentId}");
             return null;
         }
 
@@ -499,65 +508,45 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             PublishMode.None => false,
             _ => false
         };
-        var useBatchPublishing = shouldPublish && Options.PublishBatchSize > 0;
 
-        if (isVariant && sectionCulture != null)
+        if (isVariant)
         {
-            // For variant content, set name and properties only for the section's culture
-            content.SetCultureName($"{name} ({sectionCulture})", sectionCulture);
-            SetPropertiesForCulture(content, complexity, sectionCulture);
+            // For variant content, set name and properties for ALL cultures
+            foreach (var language in Context.Languages)
+            {
+                var culture = language.IsoCode;
+                content.SetCultureName($"{name} ({culture})", culture);
+                SetPropertiesForCulture(content, complexity, culture);
+            }
 
-            // Save content first
             _contentService.Save(content);
 
-            // Assign domain to root content BEFORE publishing to avoid routing warnings
+            // Track root content for domain assignment after scopes commit
             if (isRootContent)
             {
-                AssignDomainToContentAsync(content, sectionCulture).GetAwaiter().GetResult();
+                _rootContentForDomains.Add(content);
             }
 
-            if (shouldPublish && !useBatchPublishing)
+            if (shouldPublish)
             {
-                var result = _contentService.Publish(content, new[] { sectionCulture });
-                if (!result.Success)
-                {
-                    Logger.LogWarning("Failed to publish variant content {Name} in {Culture}: {Messages}",
-                        content.Name ?? "Unknown", sectionCulture,
-                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
-                }
-            }
-            else if (useBatchPublishing)
-            {
-                _pendingPublishContent.Add((content, true, sectionCulture));
+                _pendingPublishContent.Add((content, true));
             }
         }
         else
         {
-            // For invariant content (or variant without a section culture)
+            // For invariant content
             SetPropertiesForCulture(content, complexity, null);
-
-            // Save content first
             _contentService.Save(content);
 
-            // Assign domains to root content BEFORE publishing to avoid routing warnings
-            if (isRootContent && sectionCulture != null)
+            // Track root content for domain assignment after scopes commit
+            if (isRootContent)
             {
-                AssignDomainToContentAsync(content, sectionCulture).GetAwaiter().GetResult();
+                _rootContentForDomains.Add(content);
             }
 
-            if (shouldPublish && !useBatchPublishing)
+            if (shouldPublish)
             {
-                var result = _contentService.Publish(content, Array.Empty<string>());
-                if (!result.Success)
-                {
-                    Logger.LogWarning("Failed to publish invariant content {Name}: {Messages}",
-                        content.Name ?? "Unknown",
-                        string.Join(", ", result.EventMessages?.GetAll().Select(m => m.Message) ?? Array.Empty<string>()));
-                }
-            }
-            else if (useBatchPublishing)
-            {
-                _pendingPublishContent.Add((content, false, null));
+                _pendingPublishContent.Add((content, false));
             }
         }
 
@@ -581,10 +570,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     }
 
     /// <summary>
-    /// Assigns a single domain for the specified culture to root content using the v17 async API.
-    /// Each root section gets one domain matching its culture.
+    /// Assigns domains for ALL cultures to root content using the v17 async API.
+    /// Each root section gets one domain per language for proper multi-language routing.
     /// </summary>
-    private async Task AssignDomainToContentAsync(IContent content, string culture)
+    private async Task AssignAllDomainsToContentAsync(IContent content)
     {
         // Skip domain assignment if configured
         if (Options.SkipContentDomains)
@@ -594,18 +583,16 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
 
         var existingDomains = (await _domainService.GetAssignedDomainsAsync(content.Key, false)).ToList();
-
-        // Skip if domain for this culture already exists
-        if (existingDomains.Any(d => string.Equals(d.LanguageIsoCode, culture, StringComparison.OrdinalIgnoreCase)))
-        {
-            Logger.LogDebug("Domain for culture {Culture} already exists on '{Name}'", culture, content.Name);
-            return;
-        }
+        var existingIsoCodes = existingDomains
+            .Select(d => d.LanguageIsoCode)
+            .Where(c => c != null)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var domainSuffix = Options.DomainSuffix;
-        var domainName = $"test-{content.Id}-{culture.ToLower()}.{domainSuffix}";
+        var defaultCulture = Context.Languages.FirstOrDefault(l => l.IsDefault)?.IsoCode
+            ?? Context.Languages.FirstOrDefault()?.IsoCode;
 
-        // Build the complete domain list (existing + new)
+        // Build the complete domain list (existing + new for missing cultures)
         var allDomains = existingDomains
             .Select(d => new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
             {
@@ -614,28 +601,34 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             })
             .ToList();
 
-        allDomains.Add(new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
+        foreach (var language in Context.Languages)
         {
-            DomainName = domainName,
-            IsoCode = culture
-        });
+            if (existingIsoCodes.Contains(language.IsoCode))
+                continue;
+
+            allDomains.Add(new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
+            {
+                DomainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}",
+                IsoCode = language.IsoCode
+            });
+        }
 
         var updateModel = new Umbraco.Cms.Core.Models.ContentEditing.DomainsUpdateModel
         {
-            DefaultIsoCode = culture,
+            DefaultIsoCode = defaultCulture,
             Domains = allDomains
         };
 
         var result = await _domainService.UpdateDomainsAsync(content.Key, updateModel);
         if (result.Success)
         {
-            Logger.LogDebug("Assigned domain '{Domain}' ({Culture}) to root content '{Name}' (ID: {Id})",
-                domainName, culture, content.Name, content.Id);
+            Logger.LogDebug("Assigned {Count} domains to root content '{Name}' (ID: {Id})",
+                allDomains.Count, content.Name, content.Id);
         }
         else
         {
-            Logger.LogWarning("Failed to assign domain for culture {Culture} to '{Name}': {Status}",
-                culture, content.Name, result.Status);
+            Logger.LogWarning("Failed to assign domains to '{Name}': {Status}",
+                content.Name, result.Status);
         }
     }
 
