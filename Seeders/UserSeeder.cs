@@ -2,6 +2,7 @@ namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Umbraco.Cms.Core.Models.Membership;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Infrastructure.Scoping;
 using Umbraco.Extensions;
@@ -15,12 +16,14 @@ using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 public class UserSeeder : BaseSeeder<UserSeeder>
 {
     private readonly IUserService _userService;
+    private readonly IUserGroupService _userGroupService;
 
     /// <summary>
     /// Creates a new UserSeeder instance.
     /// </summary>
     public UserSeeder(
         IUserService userService,
+        IUserGroupService userGroupService,
         IScopeProvider scopeProvider,
         ILogger<UserSeeder> logger,
         IRuntimeState runtimeState,
@@ -30,6 +33,7 @@ public class UserSeeder : BaseSeeder<UserSeeder>
         : base(logger, runtimeState, config, options, context, scopeProvider)
     {
         _userService = userService;
+        _userGroupService = userGroupService;
     }
 
     /// <inheritdoc />
@@ -50,7 +54,7 @@ public class UserSeeder : BaseSeeder<UserSeeder>
     }
 
     /// <inheritdoc />
-    protected override Task SeedAsync(CancellationToken cancellationToken)
+    protected override async Task SeedAsync(CancellationToken cancellationToken)
     {
         var targetCount = Config.Users.Count;
         var prefix = GetPrefix(PrefixType.User);
@@ -58,11 +62,13 @@ public class UserSeeder : BaseSeeder<UserSeeder>
         if (IsDryRun)
         {
             Logger.LogInformation("[DRY-RUN] Would create {Count} users with prefix '{Prefix}'", targetCount, prefix);
-            return Task.CompletedTask;
+            return;
         }
 
-        // Get all user groups in one call (instead of 5 separate calls)
-        var allGroups = _userService.GetAllUserGroups().ToDictionary(g => g.Alias, StringComparer.OrdinalIgnoreCase);
+        // Get all user groups via IUserGroupService (moved from IUserService in v14+)
+        var allGroupsResult = await _userGroupService.GetAllAsync(0, 100);
+        var allGroupsList = allGroupsResult.Items.ToList();
+        var allGroups = allGroupsList.ToDictionary(g => g.Alias, StringComparer.OrdinalIgnoreCase);
         allGroups.TryGetValue("admin", out var adminGroup);
         allGroups.TryGetValue("editor", out var editorGroup);
         allGroups.TryGetValue("writer", out var writerGroup);
@@ -218,7 +224,5 @@ public class UserSeeder : BaseSeeder<UserSeeder>
         }
 
         Logger.LogInformation("Seeded {Created} test users (target: {Target})", created, targetCount);
-
-        return Task.CompletedTask;
     }
 }
