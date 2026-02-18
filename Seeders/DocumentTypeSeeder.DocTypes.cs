@@ -291,8 +291,11 @@ public partial class DocumentTypeSeeder
             @if (content.HasValue(""isVisible"")) {{ <div class=""block-prop""><strong>Visible:</strong> @content.Value(""isVisible"")</div> }}
             @if (content.HasValue(""mainImage""))
             {{
-                var img = content.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-                if (img != null) {{ <div class=""block-prop""><strong>Image:</strong><br/><img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+                var img = content.Value(""mainImage"") as MediaWithCrops;
+                if (img != null)
+                {{
+                    <div class=""block-prop""><strong>Image:</strong><br/><img src=""@img.MediaUrl()"" class=""block-image"" /></div>
+                }}
             }}
             @if (content.HasValue(""linkedContent""))
             {{
@@ -403,13 +406,19 @@ public partial class DocumentTypeSeeder
             @if (content.HasValue(""metaDescription"")) {{ <div class=""block-prop""><strong>Meta Description:</strong> @content.Value(""metaDescription"")</div> }}
             @if (content.HasValue(""mainImage""))
             {{
-                var img = content.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-                if (img != null) {{ <div class=""block-prop""><strong>Main Image:</strong><br/><img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+                var img = content.Value(""mainImage"") as MediaWithCrops;
+                if (img != null)
+                {{
+                    <div class=""block-prop""><strong>Main Image:</strong><br/><img src=""@img.MediaUrl()"" class=""block-image"" /></div>
+                }}
             }}
             @if (content.HasValue(""thumbnailImage""))
             {{
-                var thumb = content.Value<IEnumerable<MediaWithCrops>>(""thumbnailImage"")?.FirstOrDefault();
-                if (thumb != null) {{ <div class=""block-prop""><strong>Thumbnail:</strong><br/><img src=""@thumb.MediaUrl()"" alt=""@thumb.Name"" class=""block-thumbnail"" /></div> }}
+                var thumb = content.Value(""thumbnailImage"") as MediaWithCrops;
+                if (thumb != null)
+                {{
+                    <div class=""block-prop""><strong>Thumbnail:</strong><br/><img src=""@thumb.MediaUrl()"" class=""block-thumbnail"" /></div>
+                }}
             }}
             @if (content.HasValue(""linkedContent""))
             {{
@@ -504,13 +513,19 @@ public partial class DocumentTypeSeeder
         <h2>Media</h2>
         @if (Model.HasValue(""mainImage""))
         {{
-            var img = Model.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-            if (img != null) {{ <img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""media-image"" /> }}
+            var img = Model.Value(""mainImage"") as MediaWithCrops;
+            if (img != null)
+            {{
+                <img src=""@img.MediaUrl()"" class=""media-image"" />
+            }}
         }}
         @if (Model.HasValue(""thumbnailImage""))
         {{
-            var thumb = Model.Value<IEnumerable<MediaWithCrops>>(""thumbnailImage"")?.FirstOrDefault();
-            if (thumb != null) {{ <img src=""@thumb.MediaUrl()"" alt=""@thumb.Name"" class=""media-thumbnail"" /> }}
+            var thumb = Model.Value(""thumbnailImage"") as MediaWithCrops;
+            if (thumb != null)
+            {{
+                <img src=""@thumb.MediaUrl()"" class=""media-thumbnail"" />
+            }}
         }}
     </section>
     @if (Model.HasValue(""primaryContent"") || Model.HasValue(""secondaryContent"") || Model.HasValue(""tertiaryContent""))
