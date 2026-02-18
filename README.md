@@ -68,7 +68,7 @@ To publish to NuGet.org:
 
 ```bash
 # Push to NuGet (requires API key)
-dotnet nuget push bin/Release/Umbraco.Community.PerformanceTestDataSeeder.1.0.0.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
+dotnet nuget push bin/Release/Umbraco.Community.PerformanceTestDataSeeder.2.0.0.nupkg --api-key YOUR_API_KEY --source https://api.nuget.org/v3/index.json
 ```
 
 For local testing with a NuGet package (instead of project reference):
@@ -110,6 +110,26 @@ The easiest way to get started is using a preset. Add this to your `appsettings.
 | `Custom` | - | - | - | - | - | Use SeederConfiguration |
 
 When using a preset, you don't need to specify the full `SeederConfiguration` section.
+
+### Content Domains
+
+The seeder assigns path-based domains to each root content node for multi-language routing. Domains are created as `{DomainSuffix}/test-{contentId}-{culture}`. Include the port for local development:
+
+```json
+{
+  "PerformanceTestDataSeeder": {
+    "Options": {
+      "DomainSuffix": "localhost:44340"
+    }
+  }
+}
+```
+
+This produces domains like `localhost:44340/test-1158-en-us`, accessible at `https://localhost:44340/test-1158-en-us/`.
+
+For Azure, use your app hostname (e.g., `"myapp.azurewebsites.net"`).
+
+To skip domain creation entirely, set `"SkipContentDomains": true`.
 
 ## Custom Configuration
 
@@ -201,6 +221,14 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | `EnabledSeeders.*` | bool | true | Enable/disable individual seeders |
 | `Prefixes.*` | string | various | Configurable naming prefixes |
 | `CustomCultures` | string[]? | null | Custom cultures (overrides default 30) |
+| `BatchSize` | int | 50 | Items per database batch |
+| `ParallelDegree` | int | 4 | Max parallelism for CPU-bound operations |
+| `PublishMode` | enum | All | Content publishing mode (None, All, FirstSection) |
+| `PublishBatchSize` | int | 50 | Items per publish batch |
+| `DryRun` | bool | false | Log what would be created without persisting |
+| `DomainSuffix` | string | "localhost" | Domain host for content domains (e.g., "localhost:44340") |
+| `SkipContentDomains` | bool | false | Skip creating content domains entirely |
+| `RebuildCacheAfterSeeding` | bool | true | Rebuild published cache after seeding |
 
 ## Seeder Execution Order
 
@@ -337,14 +365,14 @@ done
 
 ## Requirements
 
-- **Umbraco CMS 13+** (13.0.0 and up)
-- .NET 8.0+
+- **Umbraco CMS 17+** (17.0.0 and up)
+- .NET 10.0+
 
 ## Compatibility
 
 This package is designed as a **class library** that references only `Umbraco.Cms.Core` and `Umbraco.Cms.Infrastructure` (not the full Umbraco.Cms metapackage). This means:
 
-- It does not include any web project dependencies
+- It has minimal web project dependencies
 - It can be easily added to any existing Umbraco project
 - It will automatically register via the IComposer pattern
 
@@ -353,15 +381,17 @@ This package is designed as a **class library** that references only `Umbraco.Cm
 | Package Version | Umbraco Version |
 |-----------------|-----------------|
 | 1.0.x           | 13.0.0+         |
+| 2.0.x           | 17.0.0+         |
 
-> **Note:** While the package allows Umbraco 13+, API compatibility with future major versions (14+, 15+, etc.) depends on Umbraco maintaining backward-compatible APIs. Test against your target version.
+> **Note:** The 2.0.x branch uses Umbraco 17 async APIs and is not compatible with earlier versions. Use 1.0.x for Umbraco 13/14.
 
 ## Dependencies
 
 - Bogus (fake data generation)
 - SixLabors.ImageSharp (image generation)
-- Umbraco.Cms.Core (13.x)
-- Umbraco.Cms.Infrastructure (13.x)
+- Umbraco.Cms.Core (17.x)
+- Umbraco.Cms.Infrastructure (17.x)
+- Umbraco.Cms.Web.Common (17.x)
 
 ## License
 
