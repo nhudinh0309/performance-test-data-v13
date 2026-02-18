@@ -24,6 +24,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private readonly IDataTypeService _dataTypeService;
     private readonly ILanguageService _languageService;
     private readonly IDomainService _domainService;
+    private readonly IMediaService _mediaService;
 
     // Performance caches to avoid repeated lookups (cleared at start of each seeding run)
     private readonly Dictionary<int, IContentType> _contentTypeCache = new();
@@ -63,6 +64,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         IDataTypeService dataTypeService,
         ILanguageService languageService,
         IDomainService domainService,
+        IMediaService mediaService,
         IScopeProvider scopeProvider,
         ILogger<ContentSeeder> logger,
         IRuntimeState runtimeState,
@@ -76,6 +78,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         _dataTypeService = dataTypeService;
         _languageService = languageService;
         _domainService = domainService;
+        _mediaService = mediaService;
     }
 
     /// <inheritdoc />
@@ -159,8 +162,32 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     {
         if (Context.MediaItems.Count > 0) return;
 
-        // This should be populated by MediaSeeder, but load if not present
-        Logger.LogDebug("Media items not pre-loaded, ContentSeeder will operate without media references");
+        // MediaSeeder may have been skipped (already seeded), so load media from DB directly
+        Logger.LogDebug("Media items not in context, loading from database...");
+
+        var prefix = GetPrefix(PrefixType.Media);
+        var rootMedia = _mediaService.GetRootMedia()
+            .Where(m => m.Name?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true)
+            .ToList();
+
+        var imageMedia = new List<IMedia>();
+        foreach (var root in rootMedia)
+        {
+            long pageIndex = 0;
+            const int pageSize = 100;
+            long totalRecords;
+
+            do
+            {
+                var descendants = _mediaService.GetPagedDescendants(root.Id, pageIndex, pageSize, out totalRecords);
+                var images = descendants.Where(m => m.ContentType.Alias == Constants.Conventions.MediaTypes.Image);
+                imageMedia.AddRange(images);
+                pageIndex++;
+            } while (pageIndex * pageSize < totalRecords);
+        }
+
+        Context.AddMediaItems(imageMedia);
+        Logger.LogInformation("Loaded {Count} media images from database for content linking", imageMedia.Count);
     }
 
     private void CreateContentTree(CancellationToken cancellationToken)
@@ -608,7 +635,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
             allDomains.Add(new Umbraco.Cms.Core.Models.ContentEditing.DomainModel
             {
-                DomainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}",
+                DomainName = $"{domainSuffix}/test-{content.Id}-{language.IsoCode.ToLower()}",
                 IsoCode = language.IsoCode
             });
         }
