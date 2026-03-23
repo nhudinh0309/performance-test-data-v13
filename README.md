@@ -1,6 +1,6 @@
 # Umbraco.Community.PerformanceTestDataSeeder
 
-A configurable dummy data seeder for Umbraco CMS v13+ designed for performance and load testing.
+A configurable dummy data seeder for Umbraco CMS v17+ designed for performance and load testing.
 
 ## Features
 
@@ -10,8 +10,9 @@ A configurable dummy data seeder for Umbraco CMS v13+ designed for performance a
 - Reproducible test data with configurable Faker seed
 - Enable/disable individual seeders
 - Idempotent - safe to run multiple times
-- Structured logging with progress reporting
+- Structured logging with progress reporting and per-seeder timing summary
 - Auto-registration via Umbraco IComposer
+- Requires Umbraco to be fully installed before seeding (skips silently during install)
 
 ## Installation
 
@@ -113,7 +114,9 @@ When using a preset, you don't need to specify the full `SeederConfiguration` se
 
 ### Content Domains
 
-The seeder assigns path-based domains to each root content node for multi-language routing. Domains are created as `{DomainSuffix}/test-{contentId}-{culture}`. Include the port for local development:
+The seeder assigns path-based domains to each root content node for multi-language routing. Domains are created as `{DomainSuffix}/test-{contentId}-{culture}`.
+
+> **Important:** For local development, `DomainSuffix` **must** include the port your site runs on. Without it, Umbraco's routing won't match incoming requests and domains won't work.
 
 ```json
 {
@@ -223,7 +226,7 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | `CustomCultures` | string[]? | null | Custom cultures (overrides default 30) |
 | `BatchSize` | int | 50 | Items per database batch |
 | `ParallelDegree` | int | 4 | Max parallelism for CPU-bound operations |
-| `PublishMode` | enum | All | Content publishing mode (None, All, FirstSection) |
+| `PublishMode` | enum | FirstSection | Content publishing mode (None, All, FirstSection) |
 | `PublishBatchSize` | int | 50 | Items per publish batch |
 | `DryRun` | bool | false | Log what would be created without persisting |
 | `DomainSuffix` | string | "localhost" | Domain host for content domains (e.g., "localhost:44340") |
@@ -355,11 +358,11 @@ done
 ## Performance Considerations
 
 - **Database**: SQL Server is recommended for large datasets. SQLite may timeout with Large/Massive presets.
-- **Time estimates**:
-  - Small: ~30 seconds
-  - Medium: ~2-5 minutes
-  - Large: ~10-20 minutes
-  - Massive: ~30-60+ minutes
+- **Time estimates** (with default `PublishMode: FirstSection`):
+  - Small: ~10 seconds
+  - Medium: ~1-2 minutes
+  - Large: ~5-10 minutes
+  - Massive: ~30-40 minutes
 - **Memory**: Large media generation requires adequate RAM. Consider reducing media counts if memory constrained.
 - **Disk space**: Media seeder generates actual files. Massive preset creates ~16,000+ media files.
 

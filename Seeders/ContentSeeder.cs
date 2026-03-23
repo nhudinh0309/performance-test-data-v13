@@ -99,7 +99,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     }
 
     /// <inheritdoc />
-    protected override Task SeedAsync(CancellationToken cancellationToken)
+    protected override async Task SeedAsync(CancellationToken cancellationToken)
     {
         // Clear caches to ensure fresh data (prevents stale cache if run multiple times)
         ClearCaches();
@@ -110,22 +110,23 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (Context.SimpleDocTypes.Count == 0)
         {
             Logger.LogWarning("No document types found. Please ensure DocumentTypeSeeder ran first.");
-            return Task.CompletedTask;
+            return;
         }
 
         // Load languages if not already cached
-        LoadLanguagesIfNeeded();
+        await LoadLanguagesIfNeededAsync();
         Logger.LogInformation("Using {Count} languages for content", Context.Languages.Count);
 
         // Load media items if not already cached
         LoadMediaItemsIfNeeded();
 
+        // Pre-load all data types into cache to avoid repeated GetAllAsync calls
+        await PreloadDataTypeCacheAsync();
+
         // Create content tree
-        CreateContentTree(cancellationToken);
+        await CreateContentTreeAsync(cancellationToken);
 
         Logger.LogInformation("Content seeding completed! Created {Count} content nodes.", Context.CreatedContent.Count);
-
-        return Task.CompletedTask;
     }
 
     private void LoadDocumentTypesIfNeeded()
@@ -152,10 +153,26 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count);
     }
 
-    private void LoadLanguagesIfNeeded()
+    private async Task LoadLanguagesIfNeededAsync()
     {
         if (Context.Languages.Count > 0) return;
-        Context.SetLanguages(_languageService.GetAllAsync().GetAwaiter().GetResult());
+        Context.SetLanguages(await _languageService.GetAllAsync());
+    }
+
+    /// <summary>
+    /// Pre-loads all data types into Context.DataTypeCache to avoid repeated GetAllAsync calls
+    /// during block content generation.
+    /// </summary>
+    private async Task PreloadDataTypeCacheAsync()
+    {
+        if (Context.DataTypeCache.Count > 0) return;
+
+        var allDataTypes = await _dataTypeService.GetAllAsync(Array.Empty<Guid>());
+        foreach (var dt in allDataTypes)
+        {
+            Context.DataTypeCache[dt.Id] = dt;
+        }
+        Logger.LogDebug("Pre-loaded {Count} data types into cache", Context.DataTypeCache.Count);
     }
 
     private void LoadMediaItemsIfNeeded()
@@ -190,7 +207,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         Logger.LogInformation("Loaded {Count} media images from database for content linking", imageMedia.Count);
     }
 
-    private void CreateContentTree(CancellationToken cancellationToken)
+    private async Task CreateContentTreeAsync(CancellationToken cancellationToken)
     {
         var contentConfig = Config.Content;
         var prefix = GetPrefix(PrefixType.Content);
@@ -343,10 +360,24 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (_rootContentForDomains.Count > 0)
         {
             Logger.LogInformation("Assigning domains to {Count} root content items...", _rootContentForDomains.Count);
+
+            // Warn once if DomainSuffix is the bare default without a port
+            var domainSuffix = Options.DomainSuffix;
+            if (!Options.SkipContentDomains &&
+                (domainSuffix.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                 domainSuffix.Equals("localhost/", StringComparison.OrdinalIgnoreCase)))
+            {
+                Logger.LogWarning(
+                    "DomainSuffix is '{DomainSuffix}' (no port). Domains won't match requests on " +
+                    "non-standard ports (e.g., localhost:44340). Set PerformanceTestDataSeeder:Options:DomainSuffix " +
+                    "to include the port in appsettings.json",
+                    domainSuffix);
+            }
+
             foreach (var rootContent in _rootContentForDomains)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AssignAllDomainsToContentAsync(rootContent).GetAwaiter().GetResult();
+                await AssignAllDomainsToContentAsync(rootContent);
             }
         }
 
@@ -1074,13 +1105,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
 
         // Get the BlockList configuration for this property
-        if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
-        {
-            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
-                .FirstOrDefault(d => d.Id == propType.DataTypeId);
-            if (dataType != null)
-                Context.DataTypeCache[propType.DataTypeId] = dataType;
-        }
+        // Data types are pre-loaded in PreloadDataTypeCacheAsync
+        Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType);
 
         if (dataType?.ConfigurationObject is not BlockListConfiguration blockConfig)
             return null;
@@ -1146,13 +1172,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private (string? editorAlias, object? value) GenerateBlockPropertyValue(IPropertyType propType)
     {
         // Use cached data types if available
-        if (!Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType))
-        {
-            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
-                .FirstOrDefault(d => d.Id == propType.DataTypeId);
-            if (dataType != null)
-                Context.DataTypeCache[propType.DataTypeId] = dataType;
-        }
+        // Data types are pre-loaded in PreloadDataTypeCacheAsync
+        Context.DataTypeCache.TryGetValue(propType.DataTypeId, out var dataType);
 
         if (dataType == null) return (null, null);
 
@@ -1224,14 +1245,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             return null;
         }
 
-        // Use data type cache from context
-        if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
-        {
-            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
-                .FirstOrDefault(d => d.Id == propertyType.DataTypeId);
-            if (dataType != null)
-                Context.DataTypeCache[propertyType.DataTypeId] = dataType;
-        }
+        // Data types are pre-loaded in PreloadDataTypeCacheAsync
+        Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockListConfiguration;
         _blockListConfigCache[cacheKey] = config;
@@ -1260,14 +1275,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             return null;
         }
 
-        // Use data type cache from context
-        if (!Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType))
-        {
-            dataType = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult()
-                .FirstOrDefault(d => d.Id == propertyType.DataTypeId);
-            if (dataType != null)
-                Context.DataTypeCache[propertyType.DataTypeId] = dataType;
-        }
+        // Data types are pre-loaded in PreloadDataTypeCacheAsync
+        Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockGridConfiguration;
         _blockGridConfigCache[cacheKey] = config;
