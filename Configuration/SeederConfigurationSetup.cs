@@ -48,6 +48,10 @@ public class SeederConfigurationSetup : IConfigureOptions<SeederConfiguration>
         // Users
         target.Users.Count = source.Users.Count;
 
+        // Members
+        target.Members.Count = source.Members.Count;
+        target.Members.DefaultPassword = source.Members.DefaultPassword;
+
         // DataTypes
         target.DataTypes.ListView = source.DataTypes.ListView;
         target.DataTypes.MultiNodeTreePicker = source.DataTypes.MultiNodeTreePicker;

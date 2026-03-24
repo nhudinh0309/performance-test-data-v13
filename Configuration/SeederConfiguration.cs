@@ -47,6 +47,11 @@ public class SeederConfiguration
     /// Content seeding configuration.
     /// </summary>
     public ContentConfig Content { get; set; } = new();
+
+    /// <summary>
+    /// Member seeding configuration.
+    /// </summary>
+    public MembersConfig Members { get; set; } = new();
 }
 
 /// <summary>
@@ -329,4 +334,22 @@ public class ContentConfig
     /// Target number of complex content items.
     /// </summary>
     public int ComplexTarget => TotalTarget * ComplexPercent / 100;
+}
+
+/// <summary>
+/// Member seeding configuration.
+/// </summary>
+public class MembersConfig
+{
+    /// <summary>
+    /// Number of test members to seed.
+    /// </summary>
+    public int Count { get; set; } = 30;
+
+    /// <summary>
+    /// Password to set for all test members.
+    /// Must meet Umbraco's configured password policy requirements.
+    /// Default: "Test1234!"
+    /// </summary>
+    public string DefaultPassword { get; set; } = "Test1234!";
 }

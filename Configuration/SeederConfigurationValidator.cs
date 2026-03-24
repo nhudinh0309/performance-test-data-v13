@@ -48,6 +48,13 @@ public class SeederConfigurationValidator
         // Validate Media
         ValidateMediaConfig(config.Media, errors);
 
+        // Validate Members
+        ValidateNonNegative(config.Members.Count, "Members.Count", errors);
+        if (string.IsNullOrWhiteSpace(config.Members.DefaultPassword))
+        {
+            errors.Add("Members.DefaultPassword must not be empty");
+        }
+
         // Validate Content
         ValidateContentConfig(config.Content, errors);
 

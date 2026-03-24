@@ -38,6 +38,7 @@ public static class SeederPresetConfigurations
                 ItemsPerSection = 5
             },
             Users = new UsersConfig { Count = 5 },
+            Members = new MembersConfig { Count = 10 },
             DataTypes = new DataTypesConfig
             {
                 ListView = 3,
@@ -93,6 +94,7 @@ public static class SeederPresetConfigurations
                 ItemsPerSection = 10
             },
             Users = new UsersConfig { Count = 20 },
+            Members = new MembersConfig { Count = 50 },
             DataTypes = new DataTypesConfig
             {
                 ListView = 10,
@@ -148,6 +150,7 @@ public static class SeederPresetConfigurations
                 ItemsPerSection = 30
             },
             Users = new UsersConfig { Count = 50 },
+            Members = new MembersConfig { Count = 100 },
             DataTypes = new DataTypesConfig
             {
                 ListView = 30,
@@ -203,6 +206,7 @@ public static class SeederPresetConfigurations
                 ItemsPerSection = 50
             },
             Users = new UsersConfig { Count = 100 },
+            Members = new MembersConfig { Count = 500 },
             DataTypes = new DataTypesConfig
             {
                 ListView = 50,

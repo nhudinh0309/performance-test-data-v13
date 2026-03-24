@@ -11,6 +11,9 @@
     "Users": {
       "Count": 30
     },
+    "Members": {
+      "Count": 100
+    },
     "DataTypes": {
       "ListView": 30,
       "MultiNodeTreePicker": 40,
