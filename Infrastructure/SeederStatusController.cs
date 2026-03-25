@@ -12,7 +12,7 @@ using Configuration;
 /// </summary>
 [ApiController]
 [Route("umbraco/api/seederstatus")]
-public class SeederStatusController : Controller
+public class SeederStatusController : ControllerBase
 {
     private readonly SeederStatusService _statusService;
     private readonly SeederConfiguration _config;

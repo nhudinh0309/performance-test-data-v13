@@ -352,4 +352,22 @@ public class MembersConfig
     /// Default: "Test1234!"
     /// </summary>
     public string DefaultPassword { get; set; } = "Test1234!";
+
+    /// <summary>
+    /// Percentage of members assigned to the Standard group.
+    /// Must sum to 100 with PremiumPercent and VIPPercent.
+    /// </summary>
+    public int StandardPercent { get; set; } = 40;
+
+    /// <summary>
+    /// Percentage of members assigned to the Premium group.
+    /// Must sum to 100 with StandardPercent and VIPPercent.
+    /// </summary>
+    public int PremiumPercent { get; set; } = 35;
+
+    /// <summary>
+    /// Percentage of members assigned to the VIP group.
+    /// Must sum to 100 with StandardPercent and PremiumPercent.
+    /// </summary>
+    public int VIPPercent { get; set; } = 25;
 }

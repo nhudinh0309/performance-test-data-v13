@@ -147,9 +147,9 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
 
         Logger.LogDebug("Found {Count} existing members", existingUsernames.Count);
 
-        // Distribution: 40% Standard, 35% Premium, 25% VIP
-        int standardThreshold = (int)(targetCount * 0.40);
-        int premiumThreshold = (int)(targetCount * 0.75); // 40% + 35%
+        // Distribution based on configured percentages
+        int standardThreshold = targetCount * Config.Members.StandardPercent / 100;
+        int premiumThreshold = targetCount * (Config.Members.StandardPercent + Config.Members.PremiumPercent) / 100;
 
         int created = 0;
         int batchCount = 0;

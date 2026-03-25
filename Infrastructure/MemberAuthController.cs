@@ -12,7 +12,7 @@ using Umbraco.Cms.Web.Common.Security;
 /// </summary>
 [ApiController]
 [Route("umbraco/api/memberauth")]
-public class MemberAuthController : Controller
+public class MemberAuthController : ControllerBase
 {
     private readonly MemberManager _memberManager;
     private readonly MemberSignInManager _memberSignInManager;
