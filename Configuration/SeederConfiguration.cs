@@ -47,6 +47,11 @@ public class SeederConfiguration
     /// Content seeding configuration.
     /// </summary>
     public ContentConfig Content { get; set; } = new();
+
+    /// <summary>
+    /// Member seeding configuration.
+    /// </summary>
+    public MembersConfig Members { get; set; } = new();
 }
 
 /// <summary>
@@ -329,4 +334,40 @@ public class ContentConfig
     /// Target number of complex content items.
     /// </summary>
     public int ComplexTarget => TotalTarget * ComplexPercent / 100;
+}
+
+/// <summary>
+/// Member seeding configuration.
+/// </summary>
+public class MembersConfig
+{
+    /// <summary>
+    /// Number of test members to seed.
+    /// </summary>
+    public int Count { get; set; } = 30;
+
+    /// <summary>
+    /// Password to set for all test members.
+    /// Must meet Umbraco's configured password policy requirements.
+    /// Default: "Test1234!"
+    /// </summary>
+    public string DefaultPassword { get; set; } = "Test1234!";
+
+    /// <summary>
+    /// Percentage of members assigned to the Standard group.
+    /// Must sum to 100 with PremiumPercent and VIPPercent.
+    /// </summary>
+    public int StandardPercent { get; set; } = 40;
+
+    /// <summary>
+    /// Percentage of members assigned to the Premium group.
+    /// Must sum to 100 with StandardPercent and VIPPercent.
+    /// </summary>
+    public int PremiumPercent { get; set; } = 35;
+
+    /// <summary>
+    /// Percentage of members assigned to the VIP group.
+    /// Must sum to 100 with StandardPercent and PremiumPercent.
+    /// </summary>
+    public int VIPPercent { get; set; } = 25;
 }

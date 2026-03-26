@@ -48,6 +48,21 @@ public class SeederConfigurationValidator
         // Validate Media
         ValidateMediaConfig(config.Media, errors);
 
+        // Validate Members
+        ValidateNonNegative(config.Members.Count, "Members.Count", errors);
+        if (string.IsNullOrWhiteSpace(config.Members.DefaultPassword))
+        {
+            errors.Add("Members.DefaultPassword must not be empty");
+        }
+        ValidateNonNegative(config.Members.StandardPercent, "Members.StandardPercent", errors);
+        ValidateNonNegative(config.Members.PremiumPercent, "Members.PremiumPercent", errors);
+        ValidateNonNegative(config.Members.VIPPercent, "Members.VIPPercent", errors);
+        var memberPercentSum = config.Members.StandardPercent + config.Members.PremiumPercent + config.Members.VIPPercent;
+        if (memberPercentSum != 100)
+        {
+            errors.Add($"Members group percentages must sum to 100 (StandardPercent + PremiumPercent + VIPPercent = {memberPercentSum})");
+        }
+
         // Validate Content
         ValidateContentConfig(config.Content, errors);
 

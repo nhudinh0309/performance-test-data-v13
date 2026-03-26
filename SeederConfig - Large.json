@@ -11,6 +11,12 @@
     "Users": {
       "Count": 30
     },
+    "Members": {
+      "Count": 100,
+      "StandardPercent": 40,
+      "PremiumPercent": 35,
+      "VIPPercent": 25
+    },
     "DataTypes": {
       "ListView": 30,
       "MultiNodeTreePicker": 40,

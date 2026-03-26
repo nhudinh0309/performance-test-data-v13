@@ -6,7 +6,7 @@ namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 public interface ISeeder
 {
     /// <summary>
-    /// The order in which this seeder should execute (1-7).
+    /// The order in which this seeder should execute (1-9).
     /// Lower numbers execute first.
     /// </summary>
     int ExecutionOrder { get; }

@@ -4,7 +4,9 @@ A configurable dummy data seeder for Umbraco CMS v17+ designed for performance a
 
 ## Features
 
-- Seeds languages, dictionary items, data types, document types, media, content, and users
+- Seeds languages, dictionary items, data types, document types, media, content, users, and members
+- **Member login system** - seeded members with passwords, login/member area pages, and API endpoints for load testing authentication flows
+- **Contact form** - rendered contact page with submissions persisted to the Umbraco database for verifying full pipeline under load
 - **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
 - Fully configurable via `appsettings.json`
 - Reproducible test data with configurable Faker seed
@@ -102,13 +104,13 @@ The easiest way to get started is using a preset. Add this to your `appsettings.
 
 ### Available Presets
 
-| Preset | Languages | Content | Media | Users | NestingDepth | Total Items |
-|--------|-----------|---------|-------|-------|--------------|-------------|
-| `Small` | 3 | 50 | 30 | 5 | 2 | ~200 |
-| `Medium` | 10 | 500 | 405 | 20 | 4 | ~2,000 |
-| `Large` | 20 | 10,000 | 4,020 | 50 | 6 | ~25,000 |
-| `Massive` | 30 | 50,000 | 16,050 | 100 | 8 | ~100,000 |
-| `Custom` | - | - | - | - | - | Use SeederConfiguration |
+| Preset | Languages | Content | Media | Users | Members | NestingDepth | Total Items |
+|--------|-----------|---------|-------|-------|---------|--------------|-------------|
+| `Small` | 3 | 50 | 30 | 5 | 10 | 2 | ~200 |
+| `Medium` | 10 | 500 | 405 | 20 | 50 | 4 | ~2,000 |
+| `Large` | 20 | 10,000 | 4,020 | 50 | 100 | 6 | ~25,000 |
+| `Massive` | 30 | 50,000 | 16,050 | 100 | 500 | 8 | ~100,000 |
+| `Custom` | - | - | - | - | - | - | Use SeederConfiguration |
 
 When using a preset, you don't need to specify the full `SeederConfiguration` section.
 
@@ -148,6 +150,10 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
       "ItemsPerSection": 30
     },
     "Users": { "Count": 30 },
+    "Members": {
+      "Count": 30,
+      "DefaultPassword": "Test1234!"
+    },
     "DataTypes": {
       "ListView": 30,
       "MultiNodeTreePicker": 40,
@@ -195,7 +201,9 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
         "DocumentTypes": true,
         "Media": true,
         "Content": true,
-        "Users": true
+        "Users": true,
+        "Members": true,
+        "ContactForm": true
       },
       "Prefixes": {
         "DataType": "Test_",
@@ -205,7 +213,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
         "Media": "Test_",
         "Content": "Test_",
         "User": "TestUser_",
-        "Dictionary": "Dict_"
+        "Dictionary": "Dict_",
+        "Member": "TestMember_"
       }
     }
   }
@@ -232,6 +241,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | `DomainSuffix` | string | "localhost" | Domain host for content domains (e.g., "localhost:44340") |
 | `SkipContentDomains` | bool | false | Skip creating content domains entirely |
 | `RebuildCacheAfterSeeding` | bool | true | Rebuild published cache after seeding |
+| `Members.Count` | int | 30 | Number of test members to seed |
+| `Members.DefaultPassword` | string | "Test1234!" | Password for all test members (must meet Umbraco password policy) |
 
 ## Seeder Execution Order
 
@@ -242,6 +253,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 5. **MediaSeeder** - Creates media items (PDFs, images, videos)
 6. **ContentSeeder** - Creates content hierarchy
 7. **UserSeeder** - Creates test users
+8. **MemberSeeder** - Creates front-end members with passwords, member groups, login page, and member area page
+9. **ContactFormSeeder** - Creates a contact form page with submission endpoints
 
 ## Default Data Quantities
 
@@ -257,6 +270,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | Media Items | 610 |
 | Content Nodes | 300 |
 | Users | 30 |
+| Members | 30 |
+| Frontend Pages | 3 (login, member area, contact form) |
 
 ## Nested Blocks
 
@@ -327,7 +342,7 @@ GET /umbraco/api/seederstatus/status
   "status": "Completed",
   "isComplete": true,
   "currentSeeder": null,
-  "executedCount": 7,
+  "executedCount": 9,
   "failedCount": 0,
   "elapsedMs": 45230,
   "errorMessage": null
@@ -355,6 +370,110 @@ while true; do
 done
 ```
 
+## Load Testing Endpoints
+
+The seeder creates frontend pages and API endpoints designed for load testing with tools like k6.
+
+### Member Configuration Endpoint
+
+Fetch all member credentials and URLs in one call:
+
+```
+GET /umbraco/api/seederstatus/members
+```
+
+**Response:**
+```json
+{
+  "prefix": "TestMember_",
+  "count": 30,
+  "password": "Test1234!",
+  "emailDomain": "example.com",
+  "loginUrl": "/umbraco/api/memberauth/login",
+  "logoutUrl": "/umbraco/api/memberauth/logout",
+  "meUrl": "/umbraco/api/memberauth/me",
+  "contactFormUrl": "/umbraco/api/contactform/submit",
+  "contactFormStatsUrl": "/umbraco/api/contactform/stats",
+  "loginPageUrl": "/testmember-member-login/",
+  "memberAreaPageUrl": "/testmember-member-area/",
+  "contactFormPageUrl": "/contact-us/"
+}
+```
+
+### Member Authentication (JSON API)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/umbraco/api/memberauth/login` | POST | Authenticate with `{ "username": "...", "password": "..." }`, returns JSON + auth cookie |
+| `/umbraco/api/memberauth/logout` | POST | Sign out, clears auth cookie |
+| `/umbraco/api/memberauth/me` | GET | Returns current member info |
+
+### Member Login (Frontend)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/umbraco/api/memberlogin/login` | POST | Form login, redirects to member area on success |
+| `/umbraco/api/memberlogin/logout` | POST | Form logout, redirects to login page |
+
+### Contact Form
+
+Each submission is saved as a content node under "Contact Submissions" in the Umbraco content tree, proving the full pipeline (form → controller → database) works under load.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/umbraco/api/contactform/submit` | POST | JSON submission `{ "name", "email", "subject", "message" }`, saved to DB |
+| `/umbraco/api/contactform/form-submit` | POST | Form submission with redirect, saved to DB |
+| `/umbraco/api/contactform/stats` | GET | Returns `{ "totalSubmissions": N }` counted from DB |
+
+### Frontend Pages
+
+The seeder automatically creates and publishes these Umbraco content pages:
+
+| Page | URL | Purpose |
+|------|-----|---------|
+| Member Login | `/{prefix}member-login/` | Login form for members |
+| Member Area | `/{prefix}member-area/` | Shows member info when authenticated |
+| Contact Us | `/contact-us/` | Contact form with name, email, subject, message |
+
+### k6 Example
+
+```javascript
+import http from 'k6/http';
+import { check } from 'k6';
+
+export function setup() {
+  const res = http.get('https://localhost:44340/umbraco/api/seederstatus/members');
+  return JSON.parse(res.body);
+}
+
+export default function (config) {
+  // Pick a random member
+  const i = Math.floor(Math.random() * config.count) + 1;
+  const username = `${config.prefix}${i}`;
+
+  // Login
+  const loginRes = http.post(`https://localhost:44340${config.loginUrl}`,
+    JSON.stringify({ username, password: config.password }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  check(loginRes, { 'login succeeded': (r) => r.status === 200 });
+
+  // Verify authenticated
+  const meRes = http.get(`https://localhost:44340${config.meUrl}`);
+  check(meRes, { 'is authenticated': (r) => JSON.parse(r.body).success === true });
+
+  // Submit contact form
+  const formRes = http.post(`https://localhost:44340${config.contactFormUrl}`,
+    JSON.stringify({ name: 'Test', email: 'test@example.com', subject: 'Load Test', message: 'Hello' }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  check(formRes, { 'form submitted': (r) => r.status === 200 });
+
+  // Logout
+  http.post(`https://localhost:44340${config.logoutUrl}`);
+}
+```
+
 ## Performance Considerations
 
 - **Database**: SQL Server is recommended for large datasets. SQLite may timeout with Large/Massive presets.
@@ -373,7 +492,7 @@ done
 
 ## Compatibility
 
-This package is designed as a **class library** that references only `Umbraco.Cms.Core` and `Umbraco.Cms.Infrastructure` (not the full Umbraco.Cms metapackage). This means:
+This package is designed as a **class library** that references `Umbraco.Cms.Core`, `Umbraco.Cms.Infrastructure`, and `Umbraco.Cms.Web.Common` (not the full Umbraco.Cms metapackage). This means:
 
 - It has minimal web project dependencies
 - It can be easily added to any existing Umbraco project
