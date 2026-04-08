@@ -149,18 +149,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
-        // Load parent doc types (Section/Category)
-        var parentPrefix = GetPrefix(PrefixType.ParentDocType);
-        Context.AddSectionDocTypes(allTypes.Where(t =>
-            t.Alias.StartsWith($"{parentPrefix}Section", StringComparison.OrdinalIgnoreCase)));
-        Context.AddCategoryDocTypes(allTypes.Where(t =>
-            t.Alias.StartsWith($"{parentPrefix}Category", StringComparison.OrdinalIgnoreCase)));
-        Context.AddDetailDocTypes(allTypes.Where(t =>
-            t.Alias.StartsWith($"{parentPrefix}Detail", StringComparison.OrdinalIgnoreCase)));
-
-        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Section: {Section}, Category: {Category}, Detail: {Detail}",
-            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
-            Context.SectionDocTypes.Count, Context.CategoryDocTypes.Count, Context.DetailDocTypes.Count);
+        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}",
+            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count);
     }
 
     private async Task LoadLanguagesIfNeededAsync()
@@ -261,7 +251,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                         batchCount = 0;
                     }
 
-                    var sectionDocType = GetRandomParentDocType("section");
+                    var sectionDocType = GetRandomDocType("simple");
                     var sectionContent = CreateContent($"{prefix}Section_{section}", -1, sectionDocType, "simple");
                     if (sectionContent != null) Context.AddContent(sectionContent);
                     simpleCreated++;
@@ -273,7 +263,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        var catDocType = GetRandomParentDocType("category");
+                        var catDocType = GetRandomDocType("simple");
                         var parentId = sectionContent?.Id ?? -1;
                         var catContent = CreateContent($"Category_{section}_{cat}", parentId, catDocType, "simple");
                         if (catContent != null) Context.AddContent(catContent);
@@ -324,7 +314,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var detailDocType = GetRandomParentDocType("detail");
+                                    var detailDocType = GetRandomDocType("simple");
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
                                         pageParentId, detailDocType, "simple");
@@ -535,23 +525,6 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
     }
 
-    private IContentType GetRandomParentDocType(string parentType)
-    {
-        return parentType switch
-        {
-            "section" => Context.SectionDocTypes.Count > 0
-                ? Context.SectionDocTypes[Context.Random.Next(Context.SectionDocTypes.Count)]
-                : GetRandomDocType("simple"),
-            "category" => Context.CategoryDocTypes.Count > 0
-                ? Context.CategoryDocTypes[Context.Random.Next(Context.CategoryDocTypes.Count)]
-                : GetRandomDocType("simple"),
-            "detail" => Context.DetailDocTypes.Count > 0
-                ? Context.DetailDocTypes[Context.Random.Next(Context.DetailDocTypes.Count)]
-                : GetRandomDocType("simple"),
-            _ => GetRandomDocType("simple")
-        };
-    }
-
     private IContentType GetRandomDocType(string complexity)
     {
         // Use shared Random from context for reproducibility
@@ -737,8 +710,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("description"))
             content.SetValue("description", Context.Faker.Lorem.Paragraph(), GetCulture(content, "description", culture));
-        if (content.HasProperty("isActive"))
-            content.SetValue("isActive", Context.Faker.Random.Bool(), GetCulture(content, "isActive", culture));
+        if (content.HasProperty("isPublished"))
+            content.SetValue("isPublished", Context.Faker.Random.Bool(), GetCulture(content, "isPublished", culture));
     }
 
     private void SetMediumProperties(IContent content, string? culture)

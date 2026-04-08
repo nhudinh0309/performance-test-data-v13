@@ -45,12 +45,17 @@ public class MemberAuthController : ControllerBase
         if (result.Succeeded)
         {
             var member = await _memberManager.FindByNameAsync(request.Username);
+            if (member == null)
+            {
+                return Ok(new MemberAuthResponse { Success = false, Error = "Member not found after sign-in" });
+            }
+
             return Ok(new MemberAuthResponse
             {
                 Success = true,
                 Username = request.Username,
-                Name = member?.Name,
-                Email = member?.Email
+                Name = member.Name,
+                Email = member.Email
             });
         }
 
