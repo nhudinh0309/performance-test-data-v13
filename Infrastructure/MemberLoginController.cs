@@ -33,7 +33,7 @@ public class MemberLoginController : Controller
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
         {
             TempData["LoginError"] = "Username and password are required";
-            return Redirect(request.LoginUrl ?? "/");
+            return LocalRedirect(request.LoginUrl ?? "/");
         }
 
         var result = await _memberSignInManager.PasswordSignInAsync(
@@ -41,11 +41,11 @@ public class MemberLoginController : Controller
 
         if (result.Succeeded)
         {
-            return Redirect(request.RedirectUrl ?? "/");
+            return LocalRedirect(request.RedirectUrl ?? "/");
         }
 
         TempData["LoginError"] = MemberAuthHelper.GetLoginError(result);
-        return Redirect(request.LoginUrl ?? "/");
+        return LocalRedirect(request.LoginUrl ?? "/");
     }
 
     /// <summary>
@@ -55,7 +55,7 @@ public class MemberLoginController : Controller
     public async Task<IActionResult> Logout([FromForm] MemberLogoutFormRequest request)
     {
         await _memberSignInManager.SignOutAsync();
-        return Redirect(request.RedirectUrl ?? "/");
+        return LocalRedirect(request.RedirectUrl ?? "/");
     }
 }
 

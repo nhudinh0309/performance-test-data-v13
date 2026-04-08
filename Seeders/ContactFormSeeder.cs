@@ -176,6 +176,12 @@ public class ContactFormSeeder : BaseSeeder<ContactFormSeeder>
         }
 
         var folder = _contentService.Create(SubmissionsFolderName, Constants.System.Root, SubmissionDocTypeAlias);
+        if (folder == null)
+        {
+            Logger.LogError("Failed to create submissions folder");
+            return;
+        }
+
         _contentService.Save(folder);
         _contentService.Publish(folder, Array.Empty<string>());
         Logger.LogDebug("Created submissions folder");
@@ -254,6 +260,12 @@ public class ContactFormSeeder : BaseSeeder<ContactFormSeeder>
         await _contentTypeService.CreateAsync(docType, Constants.Security.SuperUserKey);
 
         var content = _contentService.Create("Contact Us", Constants.System.Root, FormDocTypeAlias);
+        if (content == null)
+        {
+            Logger.LogError("Failed to create contact form content node");
+            return;
+        }
+
         _contentService.Save(content);
         _contentService.Publish(content, Array.Empty<string>());
     }

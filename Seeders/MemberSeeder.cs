@@ -121,7 +121,11 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
         }
 
         // Phase 2: Create frontend pages (document types, templates, content)
-        await CreateFrontendPages();
+        // Frontend pages are real content, so skip in dry-run mode
+        if (!IsDryRun)
+        {
+            await CreateFrontendPages();
+        }
 
         // Phase 3: Seed members
         await SeedMembers(targetCount, prefix, password, groupNames, cancellationToken);
@@ -185,7 +189,8 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
                     var member = _memberService.CreateMember(username, email, $"{firstName} {lastName}", "Member");
                     member.IsApproved = true;
                     // Hash password using Identity's password hasher so MemberSignInManager can verify it
-                    member.RawPasswordValue = _passwordHasher.HashPassword(null!, password);
+                    // A dummy user is passed because the hasher interface requires a non-null user parameter
+                    member.RawPasswordValue = _passwordHasher.HashPassword(new MemberIdentityUser(), password);
                     _memberService.Save(member);
 
                     // Assign to group based on distribution
@@ -255,19 +260,27 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
 
         Logger.LogInformation("Creating member login and member area pages...");
 
-        // Create templates with dynamic aliases
-        var loginTemplate = await CreateLoginTemplate(loginAlias, memberAreaAlias);
-        var memberAreaTemplate = await CreateMemberAreaTemplate(memberAreaAlias, loginAlias);
+        try
+        {
+            // Create templates with dynamic aliases
+            var loginTemplate = await CreateLoginTemplate(loginAlias, memberAreaAlias);
+            var memberAreaTemplate = await CreateMemberAreaTemplate(memberAreaAlias, loginAlias);
 
-        // Create document types
-        var loginDocType = await CreateDocType(loginAlias, $"{prefix}Login", "icon-key", loginTemplate);
-        var memberAreaDocType = await CreateDocType(memberAreaAlias, $"{prefix}Area", "icon-user", memberAreaTemplate);
+            // Create document types
+            var loginDocType = await CreateDocType(loginAlias, $"{prefix}Login", "icon-key", loginTemplate);
+            var memberAreaDocType = await CreateDocType(memberAreaAlias, $"{prefix}Area", "icon-user", memberAreaTemplate);
 
-        // Create and publish content nodes at root
-        CreateAndPublishContentNode($"{prefix}Member Login", loginDocType);
-        CreateAndPublishContentNode($"{prefix}Member Area", memberAreaDocType);
+            // Create and publish content nodes at root
+            CreateAndPublishContentNode($"{prefix}Member Login", loginDocType);
+            CreateAndPublishContentNode($"{prefix}Member Area", memberAreaDocType);
 
-        Logger.LogInformation("Created member login and member area pages");
+            Logger.LogInformation("Created member login and member area pages");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to create member frontend pages");
+            if (Options.StopOnError) throw;
+        }
     }
 
     private async Task<ITemplate> CreateLoginTemplate(string loginAlias, string memberAreaAlias)
@@ -407,6 +420,12 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
     private void CreateAndPublishContentNode(string name, IContentType docType)
     {
         var content = _contentService.Create(name, Constants.System.Root, docType.Alias);
+        if (content == null)
+        {
+            Logger.LogError("Failed to create content node '{Name}' with doc type '{Alias}'", name, docType.Alias);
+            return;
+        }
+
         _contentService.Save(content);
         _contentService.Publish(content, Array.Empty<string>());
         Logger.LogDebug("Created and published content node '{Name}'", name);

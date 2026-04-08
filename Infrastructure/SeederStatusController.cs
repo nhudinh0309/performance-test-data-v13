@@ -3,7 +3,7 @@ namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
 /// API controller for checking seeder status.
