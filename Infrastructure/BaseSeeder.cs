@@ -235,6 +235,7 @@ public abstract class BaseSeeder<TSeeder> : ISeeder where TSeeder : class
             PrefixType.User => Options.Prefixes.User,
             PrefixType.Dictionary => Options.Prefixes.Dictionary,
             PrefixType.Member => Options.Prefixes.Member,
+            PrefixType.ParentDocType => Options.Prefixes.ParentDocType,
             _ => throw new ArgumentOutOfRangeException(nameof(prefixType), prefixType, "Unknown prefix type")
         };
     }

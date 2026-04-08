@@ -170,6 +170,30 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             scope.Complete();
         }
 
+        // Phase 7: Create Detail Document Types (leaf nodes, no collection)
+        Logger.LogInformation("Phase 7: Creating Detail Document Types...");
+        using (var scope = CreateScopedBatch())
+        {
+            await CreateDetailDocTypes(cancellationToken);
+            scope.Complete();
+        }
+
+        // Phase 8: Configure AllowedContentTypes on Page Document Types (allow Detail children)
+        Logger.LogInformation("Phase 8: Configuring allowed child nodes on Page Document Types...");
+        using (var scope = CreateScopedBatch())
+        {
+            await ConfigurePageDocTypeAllowedChildren(cancellationToken);
+            scope.Complete();
+        }
+
+        // Phase 9: Create Parent Document Types (Section & Category) with ListView
+        Logger.LogInformation("Phase 9: Creating Parent Document Types with ListView...");
+        using (var scope = CreateScopedBatch())
+        {
+            await CreateParentDocumentTypes(cancellationToken);
+            scope.Complete();
+        }
+
         // Store block data types in context for ContentSeeder
         Context.AddBlockListDataTypes(blockListDataTypes);
         Context.AddBlockGridDataTypes(blockGridDataTypes);
@@ -199,7 +223,6 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
                 d.EditorAlias == Constants.PropertyEditors.Aliases.ContentPicker);
             Context.MediaPickerDataType = allDataTypes.FirstOrDefault(d =>
                 d.EditorAlias == Constants.PropertyEditors.Aliases.MediaPicker3);
-
             // Build data type cache for other seeders
             foreach (var dt in allDataTypes)
             {

@@ -5,6 +5,7 @@ A configurable dummy data seeder for Umbraco CMS v17+ designed for performance a
 ## Features
 
 - Seeds languages, dictionary items, data types, document types, media, content, users, and members
+- **Hierarchical document types** - dedicated Section, Category, Page, and Detail doc types with Collection (List View) and allowed child node configuration
 - **Member login system** - seeded members with passwords, login/member area pages, and API endpoints for load testing authentication flows
 - **Contact form** - rendered contact page with submissions persisted to the Umbraco database for verifying full pipeline under load
 - **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
@@ -214,7 +215,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
         "Content": "Test_",
         "User": "TestUser_",
         "Dictionary": "Dict_",
-        "Member": "TestMember_"
+        "Member": "TestMember_",
+        "ParentDocType": "testParent"
       }
     }
   }
@@ -249,9 +251,9 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 1. **LanguageSeeder** - Creates languages from culture pool
 2. **DictionarySeeder** - Creates dictionary items with translations
 3. **DataTypeSeeder** - Creates custom data types
-4. **DocumentTypeSeeder** - Creates element types, nested container elements, document types, block types, and templates
+4. **DocumentTypeSeeder** - Creates element types, nested container elements, page doc types (with Collection), detail doc types (leaf nodes), parent doc types (Section/Category with Collection and allowed children), block types, and templates
 5. **MediaSeeder** - Creates media items (PDFs, images, videos)
-6. **ContentSeeder** - Creates content hierarchy
+6. **ContentSeeder** - Creates content hierarchy using dedicated doc types per level (Section → Category → Page → Detail)
 7. **UserSeeder** - Creates test users
 8. **MemberSeeder** - Creates front-end members with passwords, member groups, login page, and member area page
 9. **ContactFormSeeder** - Creates a contact form page with submission endpoints
@@ -264,8 +266,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | Dictionary Items | 1,500 |
 | Data Types | 130 |
 | Element Types | 130 |
-| Document Types | 110 |
-| Templates | 110 |
+| Document Types | 110 + 6 (parent/detail) |
+| Templates | 116 |
 | Block List/Grid Types | 100 |
 | Media Items | 610 |
 | Content Nodes | 300 |
@@ -298,6 +300,29 @@ This creates realistic load testing scenarios where:
 - JSON serialization/deserialization is stressed
 - Backoffice rendering performance is tested
 - Content API handles deeply nested structures
+
+## Content Hierarchy & Document Types
+
+The seeder creates a structured content tree with dedicated document types per level:
+
+```
+Section (root)          → testParentSection{Variant|Invariant}
+  └── Category          → testParentCategory{Variant|Invariant}
+        └── Page        → testVariant/Invariant{Simple|Medium|Complex}{N}
+              └── Detail → testParentDetail{Variant|Invariant}
+```
+
+| Level | Doc Type | Collection (List View) | Allowed Children |
+|-------|----------|:----------------------:|------------------|
+| **Section** | `testParentSection*` | Yes | Category only |
+| **Category** | `testParentCategory*` | Yes | All page doc types |
+| **Page** | `testVariant/Invariant*` | Yes | Detail only |
+| **Detail** | `testParentDetail*` | No | None |
+
+- **Section** and **Category** doc types are container nodes with the built-in "List View - Content" collection configured, so child nodes display in list view in the backoffice.
+- **Page** doc types (simple/medium/complex, variant/invariant) also have collection view enabled and allow Detail doc types as children.
+- **Detail** doc types are leaf nodes with no collection and no allowed children.
+- Each level uses both variant (culture-varying) and invariant versions for realistic testing.
 
 ## Reproducible Test Data
 

@@ -22,7 +22,9 @@ public enum PrefixType
     /// <summary>Dictionary item prefix.</summary>
     Dictionary,
     /// <summary>Member prefix.</summary>
-    Member
+    Member,
+    /// <summary>Parent document type prefix (Section/Category).</summary>
+    ParentDocType
 }
 
 /// <summary>
@@ -303,4 +305,9 @@ public class SeederPrefixes
     /// Prefix for test member usernames. Default: "TestMember_"
     /// </summary>
     public string Member { get; set; } = "TestMember_";
+
+    /// <summary>
+    /// Prefix for parent document type aliases (Section/Category). Default: "testParent"
+    /// </summary>
+    public string ParentDocType { get; set; } = "testParent";
 }
