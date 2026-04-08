@@ -613,7 +613,71 @@ public partial class DocumentTypeSeeder
     #region Detail Document Types and Collection Configuration
 
     /// <summary>
+    /// Creates Detail doc types (leaf nodes) without Collection view.
+    /// Creates simple, medium, and complex variants (both variant and invariant).
+    /// </summary>
+    private async Task CreateDetailDocTypes(List<IDataType> blockListDataTypes, List<IDataType> blockGridDataTypes,
+        CancellationToken cancellationToken)
+    {
+        const string detailPrefix = "testDetail";
+        var complexities = new[] { "Simple", "Medium", "Complex" };
+
+        foreach (var isVariant in new[] { true, false })
+        {
+            var variantLabel = isVariant ? "Variant" : "Invariant";
+
+            foreach (var complexity in complexities)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var alias = $"{detailPrefix}{complexity}{variantLabel}";
+                var name = $"Test {variantLabel} Detail {complexity}";
+                var complexityLower = complexity.ToLowerInvariant();
+
+                var template = await CreateTemplate(alias, name, complexityLower);
+
+                var docType = new ContentType(_shortStringHelper, -1)
+                {
+                    Alias = alias,
+                    Name = name,
+                    Icon = "icon-document-dashed-line",
+                    AllowedAsRoot = false,
+                    Variations = isVariant ? ContentVariation.Culture : ContentVariation.Nothing
+                };
+
+                switch (complexityLower)
+                {
+                    case "simple":
+                        AddSimpleDocTypeProperties(docType);
+                        break;
+                    case "medium":
+                        var blockList = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        AddMediumDocTypeProperties(docType, blockList);
+                        break;
+                    case "complex":
+                        var bl = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        var bg = blockGridDataTypes.Count > 0
+                            ? blockGridDataTypes[Context.DetailDocTypes.Count % blockGridDataTypes.Count] : null;
+                        AddComplexDocTypeProperties(docType, bl, bg);
+                        break;
+                }
+
+                docType.AllowedTemplates = new[] { template };
+                docType.SetDefaultTemplate(template);
+
+                await _contentTypeService.CreateAsync(docType, Constants.Security.SuperUserKey);
+                Context.AddDetailDocType(docType);
+            }
+        }
+
+        Logger.LogInformation("Created {Count} detail document types", Context.DetailDocTypes.Count);
+    }
+
+    /// <summary>
     /// Configures Collection (List View) and AllowedContentTypes on all simple/medium/complex doc types.
+    /// Detail doc types are excluded (leaf nodes, no collection).
     /// Skipped when nestingDepth &lt; 2 (no parent-child relationship).
     /// </summary>
     private async Task ConfigureDocTypeCollectionAndAllowedChildren(int nestingDepth, CancellationToken cancellationToken)
@@ -626,16 +690,18 @@ public partial class DocumentTypeSeeder
 
         var collectionId = Guid.Parse(Constants.DataTypes.Guids.ListViewContent);
 
-        var allDocTypes = Context.SimpleDocTypes
+        var allPageDocTypes = Context.SimpleDocTypes
             .Concat(Context.MediumDocTypes)
             .Concat(Context.ComplexDocTypes)
             .ToList();
 
-        var allowedChildren = allDocTypes
+        // Allowed children = all page doc types + detail doc types
+        var allowedChildren = allPageDocTypes
+            .Concat(Context.DetailDocTypes)
             .Select((ct, i) => new ContentTypeSort(ct.Key, i, ct.Alias))
             .ToList();
 
-        foreach (var docType in allDocTypes)
+        foreach (var docType in allPageDocTypes)
         {
             cancellationToken.ThrowIfCancellationRequested();
             docType.ListView = collectionId;
@@ -643,7 +709,7 @@ public partial class DocumentTypeSeeder
             await _contentTypeService.UpdateAsync(docType, Constants.Security.SuperUserKey);
         }
 
-        Logger.LogInformation("Configured Collection + AllowedContentTypes on {Count} document types", allDocTypes.Count);
+        Logger.LogInformation("Configured Collection + AllowedContentTypes on {Count} document types", allPageDocTypes.Count);
     }
 
     #endregion

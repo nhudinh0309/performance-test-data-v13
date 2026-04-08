@@ -149,8 +149,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
-        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}",
-            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count);
+        Context.AddDetailDocTypes(allTypes.Where(t =>
+            t.Alias.StartsWith("testDetail", StringComparison.OrdinalIgnoreCase)));
+
+        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Detail: {Detail}",
+            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
+            Context.DetailDocTypes.Count);
     }
 
     private async Task LoadLanguagesIfNeededAsync()
@@ -314,12 +318,21 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var detailDocType = GetRandomDocType("simple");
+                                    var (detailComplexity, _) = DetermineComplexity(
+                                        simpleCreated, mediumCreated, complexCreated,
+                                        simpleTarget, mediumTarget, complexTarget);
+                                    var detailDocType = GetRandomDetailDocType(detailComplexity);
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple");
+                                        pageParentId, detailDocType, detailComplexity);
                                     if (detailContent != null) Context.AddContent(detailContent);
-                                    simpleCreated++;
+
+                                    switch (detailComplexity)
+                                    {
+                                        case "simple": simpleCreated++; break;
+                                        case "medium": mediumCreated++; break;
+                                        case "complex": complexCreated++; break;
+                                    }
                                     totalCreated++;
                                     batchCount++;
 
@@ -523,6 +536,24 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             return ("complex", GetRandomDocType("complex"));
         }
+    }
+
+    private IContentType GetRandomDetailDocType(string complexity)
+    {
+        if (Context.DetailDocTypes.Count == 0)
+            return GetRandomDocType(complexity);
+
+        // Filter detail doc types by complexity (alias contains "Simple", "Medium", or "Complex")
+        var complexityLabel = char.ToUpper(complexity[0]) + complexity[1..];
+        var matching = Context.DetailDocTypes
+            .Where(d => d.Alias.Contains(complexityLabel, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matching.Count > 0)
+            return matching[Context.Random.Next(matching.Count)];
+
+        // Fallback to any detail doc type
+        return Context.DetailDocTypes[Context.Random.Next(Context.DetailDocTypes.Count)];
     }
 
     private IContentType GetRandomDocType(string complexity)
