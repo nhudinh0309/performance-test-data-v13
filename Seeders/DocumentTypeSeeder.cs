@@ -178,11 +178,11 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             scope.Complete();
         }
 
-        // Phase 8: Configure Collection + AllowedContentTypes on page doc types (if nestingDepth >= 2)
+        // Phase 8: Configure Collection + AllowedContentTypes on page doc types
         Logger.LogInformation("Phase 8: Configuring Collection and allowed child nodes...");
         using (var scope = CreateScopedBatch())
         {
-            await ConfigureDocTypeCollectionAndAllowedChildren(docTypeConfig.NestingDepth, cancellationToken);
+            await ConfigureDocTypeCollectionAndAllowedChildren(cancellationToken);
             scope.Complete();
         }
 

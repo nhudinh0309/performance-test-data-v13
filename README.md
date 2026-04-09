@@ -5,7 +5,7 @@ A configurable dummy data seeder for Umbraco CMS v17+ designed for performance a
 ## Features
 
 - Seeds languages, dictionary items, data types, document types, media, content, users, and members
-- **Collection (List View)** on parent doc types with allowed child nodes — configurable via `NestingDepth`
+- **Collection (List View)** on parent doc types (Section, Category, Page) with allowed child nodes
 - **Member login system** - seeded members with passwords, login/member area pages, and API endpoints for load testing authentication flows
 - **Contact form** - rendered contact page with submissions persisted to the Umbraco database for verifying full pipeline under load
 - **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
@@ -311,7 +311,7 @@ Section (root)    → uses simple/medium/complex doc types (with Collection)
               └── Detail → uses dedicated Detail doc types (no Collection)
 ```
 
-**Collection (List View):** All simple/medium/complex doc types are configured with the built-in "List View - Content" collection and allowed child nodes, so parent content displays children in list view in the backoffice. This is controlled by `NestingDepth` — collection is applied when `NestingDepth >= 2`.
+**Collection (List View):** All simple/medium/complex doc types are configured with the built-in "List View - Content" collection and allowed child nodes, so parent content (Section, Category, Page) displays children in list view in the backoffice.
 
 **Detail doc types** are leaf nodes (6 types: Simple/Medium/Complex × Variant/Invariant) without collection or allowed children. Detail nodes use the same weighted complexity distribution as Pages.
 

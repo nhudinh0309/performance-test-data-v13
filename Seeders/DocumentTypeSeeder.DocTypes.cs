@@ -677,17 +677,11 @@ public partial class DocumentTypeSeeder
 
     /// <summary>
     /// Configures Collection (List View) and AllowedContentTypes on all simple/medium/complex doc types.
+    /// These are used for Section, Category, and Page levels.
     /// Detail doc types are excluded (leaf nodes, no collection).
-    /// Skipped when nestingDepth &lt; 2 (no parent-child relationship).
     /// </summary>
-    private async Task ConfigureDocTypeCollectionAndAllowedChildren(int nestingDepth, CancellationToken cancellationToken)
+    private async Task ConfigureDocTypeCollectionAndAllowedChildren(CancellationToken cancellationToken)
     {
-        if (nestingDepth < 2)
-        {
-            Logger.LogInformation("Skipping collection configuration (nestingDepth {Depth} < 2)", nestingDepth);
-            return;
-        }
-
         var collectionId = Guid.Parse(Constants.DataTypes.Guids.ListViewContent);
 
         var allPageDocTypes = Context.SimpleDocTypes
