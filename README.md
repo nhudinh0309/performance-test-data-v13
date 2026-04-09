@@ -5,6 +5,7 @@ A configurable dummy data seeder for Umbraco CMS v17+ designed for performance a
 ## Features
 
 - Seeds languages, dictionary items, data types, document types, media, content, users, and members
+- **Collection (List View)** on parent doc types with allowed child nodes — configurable via `NestingDepth`
 - **Member login system** - seeded members with passwords, login/member area pages, and API endpoints for load testing authentication flows
 - **Contact form** - rendered contact page with submissions persisted to the Umbraco database for verifying full pipeline under load
 - **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
@@ -249,9 +250,9 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 1. **LanguageSeeder** - Creates languages from culture pool
 2. **DictionarySeeder** - Creates dictionary items with translations
 3. **DataTypeSeeder** - Creates custom data types
-4. **DocumentTypeSeeder** - Creates element types, nested container elements, document types, block types, and templates
+4. **DocumentTypeSeeder** - Creates element types, nested container elements, document types (with Collection view and allowed children), detail doc types (leaf nodes), block types, and templates
 5. **MediaSeeder** - Creates media items (PDFs, images, videos)
-6. **ContentSeeder** - Creates content hierarchy
+6. **ContentSeeder** - Creates content hierarchy (Section → Category → Page → Detail)
 7. **UserSeeder** - Creates test users
 8. **MemberSeeder** - Creates front-end members with passwords, member groups, login page, and member area page
 9. **ContactFormSeeder** - Creates a contact form page with submission endpoints
@@ -264,8 +265,8 @@ For fine-grained control, set `Preset` to `Custom` (or omit it) and add configur
 | Dictionary Items | 1,500 |
 | Data Types | 130 |
 | Element Types | 130 |
-| Document Types | 110 |
-| Templates | 110 |
+| Document Types | 110 + 6 (detail) |
+| Templates | 116 |
 | Block List/Grid Types | 100 |
 | Media Items | 610 |
 | Content Nodes | 300 |
@@ -298,6 +299,21 @@ This creates realistic load testing scenarios where:
 - JSON serialization/deserialization is stressed
 - Backoffice rendering performance is tested
 - Content API handles deeply nested structures
+
+## Content Hierarchy & Document Types
+
+The seeder creates a 4-level content tree:
+
+```
+Section (root)    → uses simple/medium/complex doc types (with Collection)
+  └── Category    → uses simple/medium/complex doc types (with Collection)
+        └── Page  → uses simple/medium/complex doc types (with Collection)
+              └── Detail → uses dedicated Detail doc types (no Collection)
+```
+
+**Collection (List View):** All simple/medium/complex doc types are configured with the built-in "List View - Content" collection and allowed child nodes, so parent content displays children in list view in the backoffice. This is controlled by `NestingDepth` — collection is applied when `NestingDepth >= 2`.
+
+**Detail doc types** are leaf nodes (6 types: Simple/Medium/Complex × Variant/Invariant) without collection or allowed children. Detail nodes use the same weighted complexity distribution as Pages.
 
 ## Reproducible Test Data
 
