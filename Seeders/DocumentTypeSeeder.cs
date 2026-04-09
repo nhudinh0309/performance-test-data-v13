@@ -170,6 +170,22 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             scope.Complete();
         }
 
+        // Phase 7: Create Detail Document Types (leaf nodes, no collection)
+        Logger.LogInformation("Phase 7: Creating Detail Document Types...");
+        using (var scope = CreateScopedBatch())
+        {
+            await CreateDetailDocTypes(blockListDataTypes, blockGridDataTypes, cancellationToken);
+            scope.Complete();
+        }
+
+        // Phase 8: Configure Collection + AllowedContentTypes on page doc types
+        Logger.LogInformation("Phase 8: Configuring Collection and allowed child nodes...");
+        using (var scope = CreateScopedBatch())
+        {
+            await ConfigureDocTypeCollectionAndAllowedChildren(cancellationToken);
+            scope.Complete();
+        }
+
         // Store block data types in context for ContentSeeder
         Context.AddBlockListDataTypes(blockListDataTypes);
         Context.AddBlockGridDataTypes(blockGridDataTypes);
