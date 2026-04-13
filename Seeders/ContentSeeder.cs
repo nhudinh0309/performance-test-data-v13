@@ -165,11 +165,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
     /// <summary>
     /// Pre-loads all data types into Context.DataTypeCache to avoid repeated GetAllAsync calls
-    /// during block content generation.
+    /// during block content generation. Always reloads fresh from DB to include block data types
+    /// created by DocumentTypeSeeder after the initial cache was populated.
     /// </summary>
     private async Task PreloadDataTypeCacheAsync()
     {
-        if (Context.DataTypeCache.Count > 0) return;
+        Context.DataTypeCache.Clear();
 
         var allDataTypes = await _dataTypeService.GetAllAsync(Array.Empty<Guid>());
         foreach (var dt in allDataTypes)
@@ -767,6 +768,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var blockJson = GenerateSimpleBlockListJson(content, "blocks");
             if (!string.IsNullOrEmpty(blockJson))
                 content.SetValue("blocks", blockJson, GetCulture(content, "blocks", culture));
+            else
+                Logger.LogDebug("No block JSON generated for 'blocks' on {Name} ({Alias})", content.Name, content.ContentType.Alias);
         }
     }
 
@@ -867,13 +870,26 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateSimpleBlockListJson(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockListConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockList: No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var simpleBlock = FindBlockByComplexity(blockConfig.Blocks, "Simple");
-        if (simpleBlock == null) return null;
+        if (simpleBlock == null)
+        {
+            Logger.LogDebug("BlockList: No Simple block found in config for '{Alias}' ({BlockCount} blocks available)",
+                propertyAlias, blockConfig.Blocks.Length);
+            return null;
+        }
 
         var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
-        if (elementType == null) return null;
+        if (elementType == null)
+        {
+            Logger.LogWarning("BlockList: Element type {Key} not found for Simple block", simpleBlock.ContentElementTypeKey);
+            return null;
+        }
 
         var contentKey = Guid.NewGuid();
         var contentData = BuildElementContentDataObject(elementType, simpleBlock.ContentElementTypeKey, contentKey);
@@ -895,7 +911,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateBlockListJsonWithAllComplexities(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockListConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockList (all complexities): No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
@@ -950,7 +970,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateBlockGridJson(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockGridConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockGrid: No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
@@ -1280,6 +1304,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockListConfiguration;
+        if (dataType != null && config == null)
+        {
+            Logger.LogWarning("BlockList config cast failed for property '{Alias}' on content type {TypeId}. " +
+                "DataTypeId={DataTypeId}, ConfigurationObject type: {ActualType}",
+                propertyAlias, content.ContentTypeId, propertyType.DataTypeId,
+                dataType.ConfigurationObject?.GetType().FullName ?? "null");
+        }
+        else if (dataType == null)
+        {
+            Logger.LogWarning("BlockList data type not found in cache for property '{Alias}', DataTypeId={DataTypeId}",
+                propertyAlias, propertyType.DataTypeId);
+        }
+
         _blockListConfigCache[cacheKey] = config;
         return config;
     }
@@ -1310,6 +1347,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockGridConfiguration;
+        if (dataType != null && config == null)
+        {
+            Logger.LogWarning("BlockGrid config cast failed for property '{Alias}' on content type {TypeId}. " +
+                "DataTypeId={DataTypeId}, ConfigurationObject type: {ActualType}",
+                propertyAlias, content.ContentTypeId, propertyType.DataTypeId,
+                dataType.ConfigurationObject?.GetType().FullName ?? "null");
+        }
+        else if (dataType == null)
+        {
+            Logger.LogWarning("BlockGrid data type not found in cache for property '{Alias}', DataTypeId={DataTypeId}",
+                propertyAlias, propertyType.DataTypeId);
+        }
+
         _blockGridConfigCache[cacheKey] = config;
         return config;
     }
