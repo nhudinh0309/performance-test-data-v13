@@ -149,8 +149,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
         Context.AddDetailDocTypes(allTypes.Where(t =>
-            t.Alias.StartsWith("testDetail", StringComparison.OrdinalIgnoreCase)));
+            t.Alias.StartsWith(detailPrefix, StringComparison.OrdinalIgnoreCase)));
 
         Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Detail: {Detail}",
             Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
@@ -319,21 +320,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var (detailComplexity, _) = DetermineComplexity(
-                                        simpleCreated, mediumCreated, complexCreated,
-                                        simpleTarget, mediumTarget, complexTarget);
-                                    var detailDocType = GetRandomDetailDocType(detailComplexity);
+                                    var detailDocType = GetRandomDetailDocType("simple");
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, detailComplexity);
+                                        pageParentId, detailDocType, "simple");
                                     if (detailContent != null) Context.AddContent(detailContent);
-
-                                    switch (detailComplexity)
-                                    {
-                                        case "simple": simpleCreated++; break;
-                                        case "medium": mediumCreated++; break;
-                                        case "complex": complexCreated++; break;
-                                    }
+                                    simpleCreated++;
                                     totalCreated++;
                                     batchCount++;
 
@@ -884,7 +876,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             return null;
         }
 
-        var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
+        var elementType = GetCachedContentTypeByKey(simpleBlock.ContentElementTypeKey);
         if (elementType == null)
         {
             Logger.LogWarning("BlockList: Element type {Key} not found for Simple block", simpleBlock.ContentElementTypeKey);
@@ -925,7 +917,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -942,7 +934,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();
@@ -984,7 +976,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -1001,7 +993,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockGridByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();
@@ -1177,7 +1169,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null && currentDepth < maxDepth)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -1195,7 +1187,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();

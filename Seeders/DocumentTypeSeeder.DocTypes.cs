@@ -619,7 +619,7 @@ public partial class DocumentTypeSeeder
     private async Task CreateDetailDocTypes(List<IDataType> blockListDataTypes, List<IDataType> blockGridDataTypes,
         CancellationToken cancellationToken)
     {
-        const string detailPrefix = "testDetail";
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
         var complexities = new[] { "Simple", "Medium", "Complex" };
 
         foreach (var isVariant in new[] { true, false })

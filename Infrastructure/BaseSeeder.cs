@@ -230,6 +230,7 @@ public abstract class BaseSeeder<TSeeder> : ISeeder where TSeeder : class
             PrefixType.ElementType => Options.Prefixes.ElementType,
             PrefixType.VariantDocType => Options.Prefixes.VariantDocType,
             PrefixType.InvariantDocType => Options.Prefixes.InvariantDocType,
+            PrefixType.DetailDocType => Options.Prefixes.DetailDocType,
             PrefixType.Media => Options.Prefixes.Media,
             PrefixType.Content => Options.Prefixes.Content,
             PrefixType.User => Options.Prefixes.User,
