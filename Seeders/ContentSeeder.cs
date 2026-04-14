@@ -233,8 +233,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (IsDryRun)
         {
             Logger.LogInformation("[DRY-RUN] Would create content tree with target: {Target} items", targetTotal);
-            Logger.LogInformation("[DRY-RUN] Distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
+            Logger.LogInformation("[DRY-RUN] Page distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
                 contentConfig.SimplePercent, contentConfig.MediumPercent, contentConfig.ComplexPercent);
+            Logger.LogInformation("[DRY-RUN] Detail page distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
+                contentConfig.DetailSimplePercent, contentConfig.DetailMediumPercent, contentConfig.DetailComplexPercent);
         }
 
         int batchCount = 0;
@@ -320,12 +322,25 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var detailDocType = GetRandomDetailDocType("simple");
+                                    // Detail pages use a configurable distribution to provide
+                                    // realistic variety for load testing while limiting costly complex pages
+                                    var detailRoll = Context.Random.Next(100);
+                                    var detailComplexity = detailRoll < contentConfig.DetailSimplePercent
+                                        ? "simple"
+                                        : detailRoll < contentConfig.DetailSimplePercent + contentConfig.DetailMediumPercent
+                                            ? "medium"
+                                            : "complex";
+                                    var detailDocType = GetRandomDetailDocType(detailComplexity);
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple");
+                                        pageParentId, detailDocType, detailComplexity);
                                     if (detailContent != null) Context.AddContent(detailContent);
-                                    simpleCreated++;
+                                    switch (detailComplexity)
+                                    {
+                                        case "simple": simpleCreated++; break;
+                                        case "medium": mediumCreated++; break;
+                                        case "complex": complexCreated++; break;
+                                    }
                                     totalCreated++;
                                     batchCount++;
 

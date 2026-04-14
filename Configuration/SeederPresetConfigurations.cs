@@ -71,6 +71,9 @@ public static class SeederPresetConfigurations
                 SimplePercent = 50,
                 MediumPercent = 30,
                 ComplexPercent = 20,
+                DetailSimplePercent = 60,
+                DetailMediumPercent = 30,
+                DetailComplexPercent = 10,
                 RootSections = 3,
                 CategoriesPerSection = 2,
                 PagesPerCategory = 5
@@ -127,6 +130,9 @@ public static class SeederPresetConfigurations
                 SimplePercent = 50,
                 MediumPercent = 30,
                 ComplexPercent = 20,
+                DetailSimplePercent = 60,
+                DetailMediumPercent = 30,
+                DetailComplexPercent = 10,
                 RootSections = 10,
                 CategoriesPerSection = 5,
                 PagesPerCategory = 10
@@ -183,6 +189,9 @@ public static class SeederPresetConfigurations
                 SimplePercent = 50,
                 MediumPercent = 30,
                 ComplexPercent = 20,
+                DetailSimplePercent = 60,
+                DetailMediumPercent = 30,
+                DetailComplexPercent = 10,
                 RootSections = 50,
                 CategoriesPerSection = 10,
                 PagesPerCategory = 20
@@ -239,6 +248,9 @@ public static class SeederPresetConfigurations
                 SimplePercent = 50,
                 MediumPercent = 30,
                 ComplexPercent = 20,
+                DetailSimplePercent = 65,
+                DetailMediumPercent = 30,
+                DetailComplexPercent = 5,
                 RootSections = 100,
                 CategoriesPerSection = 20,
                 PagesPerCategory = 25
