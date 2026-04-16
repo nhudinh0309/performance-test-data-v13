@@ -5,6 +5,7 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 /// <summary>
 /// Partial class containing Element Type creation logic.
@@ -17,9 +18,11 @@ public partial class DocumentTypeSeeder
     /// Level N (deepest) = leaf elements (Simple/Medium/Complex)
     /// Level 1 (top) = outermost container
     /// </summary>
-    private void CreateNestedContainerElements(int nestingDepth, CancellationToken cancellationToken)
+    private async Task CreateNestedContainerElements(int nestingDepth, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.ElementType);
+        var userKey = Constants.Security.SuperUserKey;
+
         if (!_propertyEditors.TryGet(Constants.PropertyEditors.Aliases.BlockList, out var editor))
         {
             Logger.LogWarning("BlockList property editor not found - skipping nested containers");
@@ -40,7 +43,7 @@ public partial class DocumentTypeSeeder
             var childElements = _nestedContainersByLevel[level + 1];
 
             // Create a BlockList data type for this nesting level
-            var blockListDataType = CreateNestedBlockListDataType(level, childElements);
+            var blockListDataType = await CreateNestedBlockListDataType(level, childElements);
             if (blockListDataType == null) continue;
 
             // Create 3 container element types per level (to provide variety)
@@ -80,7 +83,7 @@ public partial class DocumentTypeSeeder
 
                     containerElement.PropertyGroups.Add(contentGroup);
 
-                    _contentTypeService.Save(containerElement);
+                    await _contentTypeService.CreateAsync(containerElement, userKey);
                     elementsForThisLevel.Add(containerElement);
                     Context.AddElementType(containerElement);
 
@@ -126,12 +129,13 @@ public partial class DocumentTypeSeeder
     /// <summary>
     /// Creates a BlockList data type configured to allow the specified child elements.
     /// </summary>
-    private IDataType? CreateNestedBlockListDataType(int level, List<IContentType> allowedElements)
+    private async Task<IDataType?> CreateNestedBlockListDataType(int level, List<IContentType> allowedElements)
     {
         var editor = _propertyEditors[Constants.PropertyEditors.Aliases.BlockList];
         if (editor == null) return null;
 
         var prefix = GetPrefix(PrefixType.DataType);
+        var userKey = Constants.Security.SuperUserKey;
 
         try
         {
@@ -139,21 +143,27 @@ public partial class DocumentTypeSeeder
             var dataType = new DataType(editor, _serializer)
             {
                 Name = name,
-                DatabaseType = ValueStorageType.Ntext
+                DatabaseType = ValueStorageType.Ntext,
+                EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
             };
 
             var blocks = allowedElements.Select(element => new BlockListConfiguration.BlockConfiguration
             {
-                ContentElementTypeKey = element.Key,
-                Label = element.Name
+                ContentElementTypeKey = element.Key
             }).ToArray();
 
-            dataType.Configuration = new BlockListConfiguration { Blocks = blocks };
+            var config = new BlockListConfiguration { Blocks = blocks };
+            dataType.ConfigurationData = editor.GetConfigurationEditor().FromConfigurationObject(config, _serializer);
 
-            _dataTypeService.Save(dataType);
-            Logger.LogDebug("Created nested BlockList data type: {Name} with {Count} allowed blocks", name, blocks.Length);
+            var result = await _dataTypeService.CreateAsync(dataType, userKey);
+            if (result.Success)
+            {
+                Logger.LogDebug("Created nested BlockList data type: {Name} with {Count} allowed blocks", name, blocks.Length);
+                return result.Result;
+            }
 
-            return dataType;
+            Logger.LogWarning("Failed to create nested BlockList data type: {Status}", result.Status);
+            return null;
         }
         catch (Exception ex)
         {
@@ -163,7 +173,7 @@ public partial class DocumentTypeSeeder
         }
     }
 
-    private void CreateElementTypes(ComplexityConfig config, CancellationToken cancellationToken)
+    private async Task CreateElementTypes(ComplexityConfig config, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.ElementType);
         int totalCreated = 0;
@@ -174,7 +184,7 @@ public partial class DocumentTypeSeeder
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var elementType = CreateElementType($"{prefix}Simple{i}", $"Test Element Simple {i}", "simple");
+                var elementType = await CreateElementType($"{prefix}Simple{i}", $"Test Element Simple {i}", "simple");
                 Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
@@ -192,7 +202,7 @@ public partial class DocumentTypeSeeder
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var elementType = CreateElementType($"{prefix}Medium{i}", $"Test Element Medium {i}", "medium");
+                var elementType = await CreateElementType($"{prefix}Medium{i}", $"Test Element Medium {i}", "medium");
                 Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
@@ -210,7 +220,7 @@ public partial class DocumentTypeSeeder
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var elementType = CreateElementType($"{prefix}Complex{i}", $"Test Element Complex {i}", "complex");
+                var elementType = await CreateElementType($"{prefix}Complex{i}", $"Test Element Complex {i}", "complex");
                 Context.AddElementType(elementType);
                 totalCreated++;
                 LogProgress(totalCreated, config.Total, "element types");
@@ -225,7 +235,7 @@ public partial class DocumentTypeSeeder
         Logger.LogInformation("Created {Count} element types (target: {Target})", totalCreated, config.Total);
     }
 
-    private IContentType CreateElementType(string alias, string name, string complexity)
+    private async Task<IContentType> CreateElementType(string alias, string name, string complexity)
     {
         var elementType = new ContentType(_shortStringHelper, -1)
         {
@@ -248,7 +258,7 @@ public partial class DocumentTypeSeeder
                 break;
         }
 
-        _contentTypeService.Save(elementType);
+        await _contentTypeService.CreateAsync(elementType, Constants.Security.SuperUserKey);
         return elementType;
     }
 

@@ -1,6 +1,7 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Seeders;
 
 using Microsoft.Extensions.Logging;
+using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
@@ -11,7 +12,7 @@ public partial class DocumentTypeSeeder
 {
     #region Variant Document Types
 
-    private void CreateVariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
+    private async Task CreateVariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.VariantDocType);
@@ -25,7 +26,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Variant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
                 Context.AddSimpleDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -46,7 +47,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Variant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
                 Context.AddMediumDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -68,7 +69,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Variant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
                 Context.AddComplexDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -87,7 +88,7 @@ public partial class DocumentTypeSeeder
 
     #region Invariant Document Types
 
-    private void CreateInvariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
+    private async Task CreateInvariantDocumentTypes(ComplexityConfig config, List<IDataType> blockListDataTypes,
         List<IDataType> blockGridDataTypes, CancellationToken cancellationToken)
     {
         var prefix = GetPrefix(PrefixType.InvariantDocType);
@@ -101,7 +102,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Invariant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
                 Context.AddSimpleDocType(docType);
                 created++;
             }
@@ -121,7 +122,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Invariant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
                 Context.AddMediumDocType(docType);
                 created++;
             }
@@ -142,7 +143,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Invariant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
                 Context.AddComplexDocType(docType);
                 created++;
             }
@@ -160,7 +161,7 @@ public partial class DocumentTypeSeeder
 
     #region Document Type and Template Creation
 
-    private IContentType CreateDocumentTypeWithTemplate(
+    private async Task<IContentType> CreateDocumentTypeWithTemplate(
         string alias,
         string name,
         string complexity,
@@ -169,7 +170,7 @@ public partial class DocumentTypeSeeder
         IDataType? blockGridDataType)
     {
         // Create Template first
-        var template = CreateTemplate(alias, name, complexity);
+        var template = await CreateTemplate(alias, name, complexity);
 
         // Create Document Type
         var docType = new ContentType(_shortStringHelper, -1)
@@ -199,19 +200,19 @@ public partial class DocumentTypeSeeder
         docType.AllowedTemplates = new[] { template };
         docType.SetDefaultTemplate(template);
 
-        _contentTypeService.Save(docType);
+        await _contentTypeService.CreateAsync(docType, Constants.Security.SuperUserKey);
         return docType;
     }
 
-    private ITemplate CreateTemplate(string alias, string name, string complexity)
+    private async Task<ITemplate> CreateTemplate(string alias, string name, string complexity)
     {
         var template = new Template(_shortStringHelper, name, alias)
         {
             Content = GenerateTemplateContent(alias, name, complexity)
         };
 
-        _fileService.SaveTemplate(template);
-        return template;
+        var result = await _templateService.CreateAsync(template, Constants.Security.SuperUserKey);
+        return result.Success ? result.Result : template;
     }
 
     #endregion
@@ -258,12 +259,12 @@ public partial class DocumentTypeSeeder
     {{
         <div class=""property""><span class=""property-label"">Description:</span> @Model.Value(""description"")</div>
     }}
-    @if (Model.HasProperty(""isPublished""))
+    @if (Model.HasProperty(""isActive""))
     {{
-        var isPublished = Model.Value<bool>(""isPublished"");
+        var isActive = Model.Value<bool>(""isActive"");
         <div class=""property"">
             <span class=""property-label"">Status:</span>
-            <span class=""@(isPublished ? ""status-published"" : ""status-unpublished"")"">@(isPublished ? ""Published"" : ""Draft"")</span>
+            <span class=""@(isActive ? ""status-published"" : ""status-unpublished"")"">@(isActive ? ""Active"" : ""Inactive"")</span>
         </div>
     }}
     <footer><p>Generated by PerformanceTestDataSeeder</p></footer>
@@ -291,8 +292,11 @@ public partial class DocumentTypeSeeder
             @if (content.HasValue(""isVisible"")) {{ <div class=""block-prop""><strong>Visible:</strong> @content.Value(""isVisible"")</div> }}
             @if (content.HasValue(""mainImage""))
             {{
-                var img = content.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-                if (img != null) {{ <div class=""block-prop""><strong>Image:</strong><br/><img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+                var img = content.Value(""mainImage"") as MediaWithCrops;
+                if (img != null)
+                {{
+                    <div class=""block-prop""><strong>Image:</strong><br/><img src=""@img.MediaUrl()"" class=""block-image"" /></div>
+                }}
             }}
             @if (content.HasValue(""linkedContent""))
             {{
@@ -403,13 +407,19 @@ public partial class DocumentTypeSeeder
             @if (content.HasValue(""metaDescription"")) {{ <div class=""block-prop""><strong>Meta Description:</strong> @content.Value(""metaDescription"")</div> }}
             @if (content.HasValue(""mainImage""))
             {{
-                var img = content.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-                if (img != null) {{ <div class=""block-prop""><strong>Main Image:</strong><br/><img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""block-image"" /></div> }}
+                var img = content.Value(""mainImage"") as MediaWithCrops;
+                if (img != null)
+                {{
+                    <div class=""block-prop""><strong>Main Image:</strong><br/><img src=""@img.MediaUrl()"" class=""block-image"" /></div>
+                }}
             }}
             @if (content.HasValue(""thumbnailImage""))
             {{
-                var thumb = content.Value<IEnumerable<MediaWithCrops>>(""thumbnailImage"")?.FirstOrDefault();
-                if (thumb != null) {{ <div class=""block-prop""><strong>Thumbnail:</strong><br/><img src=""@thumb.MediaUrl()"" alt=""@thumb.Name"" class=""block-thumbnail"" /></div> }}
+                var thumb = content.Value(""thumbnailImage"") as MediaWithCrops;
+                if (thumb != null)
+                {{
+                    <div class=""block-prop""><strong>Thumbnail:</strong><br/><img src=""@thumb.MediaUrl()"" class=""block-thumbnail"" /></div>
+                }}
             }}
             @if (content.HasValue(""linkedContent""))
             {{
@@ -504,13 +514,19 @@ public partial class DocumentTypeSeeder
         <h2>Media</h2>
         @if (Model.HasValue(""mainImage""))
         {{
-            var img = Model.Value<IEnumerable<MediaWithCrops>>(""mainImage"")?.FirstOrDefault();
-            if (img != null) {{ <img src=""@img.MediaUrl()"" alt=""@img.Name"" class=""media-image"" /> }}
+            var img = Model.Value(""mainImage"") as MediaWithCrops;
+            if (img != null)
+            {{
+                <img src=""@img.MediaUrl()"" class=""media-image"" />
+            }}
         }}
         @if (Model.HasValue(""thumbnailImage""))
         {{
-            var thumb = Model.Value<IEnumerable<MediaWithCrops>>(""thumbnailImage"")?.FirstOrDefault();
-            if (thumb != null) {{ <img src=""@thumb.MediaUrl()"" alt=""@thumb.Name"" class=""media-thumbnail"" /> }}
+            var thumb = Model.Value(""thumbnailImage"") as MediaWithCrops;
+            if (thumb != null)
+            {{
+                <img src=""@thumb.MediaUrl()"" class=""media-thumbnail"" />
+            }}
         }}
     </section>
     @if (Model.HasValue(""primaryContent"") || Model.HasValue(""secondaryContent"") || Model.HasValue(""tertiaryContent""))
@@ -594,6 +610,104 @@ public partial class DocumentTypeSeeder
 
     #endregion
 
+    #region Detail Document Types and Collection Configuration
+
+    /// <summary>
+    /// Creates Detail doc types (leaf nodes) without Collection view.
+    /// Creates simple, medium, and complex variants (both variant and invariant).
+    /// </summary>
+    private async Task CreateDetailDocTypes(List<IDataType> blockListDataTypes, List<IDataType> blockGridDataTypes,
+        CancellationToken cancellationToken)
+    {
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
+        var complexities = new[] { "Simple", "Medium", "Complex" };
+
+        foreach (var isVariant in new[] { true, false })
+        {
+            var variantLabel = isVariant ? "Variant" : "Invariant";
+
+            foreach (var complexity in complexities)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var alias = $"{detailPrefix}{complexity}{variantLabel}";
+                var name = $"Test {variantLabel} Detail {complexity}";
+                var complexityLower = complexity.ToLowerInvariant();
+
+                var template = await CreateTemplate(alias, name, complexityLower);
+
+                var docType = new ContentType(_shortStringHelper, -1)
+                {
+                    Alias = alias,
+                    Name = name,
+                    Icon = "icon-document-dashed-line",
+                    AllowedAsRoot = false,
+                    Variations = isVariant ? ContentVariation.Culture : ContentVariation.Nothing
+                };
+
+                switch (complexityLower)
+                {
+                    case "simple":
+                        AddSimpleDocTypeProperties(docType);
+                        break;
+                    case "medium":
+                        var blockList = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        AddMediumDocTypeProperties(docType, blockList);
+                        break;
+                    case "complex":
+                        var bl = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        var bg = blockGridDataTypes.Count > 0
+                            ? blockGridDataTypes[Context.DetailDocTypes.Count % blockGridDataTypes.Count] : null;
+                        AddComplexDocTypeProperties(docType, bl, bg);
+                        break;
+                }
+
+                docType.AllowedTemplates = new[] { template };
+                docType.SetDefaultTemplate(template);
+
+                await _contentTypeService.CreateAsync(docType, Constants.Security.SuperUserKey);
+                Context.AddDetailDocType(docType);
+            }
+        }
+
+        Logger.LogInformation("Created {Count} detail document types", Context.DetailDocTypes.Count);
+    }
+
+    /// <summary>
+    /// Configures Collection (List View) and AllowedContentTypes on all simple/medium/complex doc types.
+    /// These are used for Section, Category, and Page levels.
+    /// Detail doc types are excluded (leaf nodes, no collection).
+    /// </summary>
+    private async Task ConfigureDocTypeCollectionAndAllowedChildren(CancellationToken cancellationToken)
+    {
+        var collectionId = Guid.Parse(Constants.DataTypes.Guids.ListViewContent);
+
+        var allPageDocTypes = Context.SimpleDocTypes
+            .Concat(Context.MediumDocTypes)
+            .Concat(Context.ComplexDocTypes)
+            .ToList();
+
+        // Allowed children = all page doc types + detail doc types
+        var allowedChildren = allPageDocTypes
+            .Concat(Context.DetailDocTypes)
+            .Select((ct, i) => new ContentTypeSort(ct.Key, i, ct.Alias))
+            .ToList();
+
+        foreach (var docType in allPageDocTypes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            docType.ListView = collectionId;
+            docType.AllowedContentTypes = allowedChildren;
+            await _contentTypeService.UpdateAsync(docType, Constants.Security.SuperUserKey);
+        }
+
+        Logger.LogInformation("Configured Collection + AllowedContentTypes on {Count} document types", allPageDocTypes.Count);
+    }
+
+    #endregion
+
     #region Document Type Properties
 
     private void AddSimpleDocTypeProperties(IContentType docType)
@@ -616,8 +730,8 @@ public partial class DocumentTypeSeeder
         });
         group.PropertyTypes!.Add(new PropertyType(_shortStringHelper, GetTrueFalseDataType())
         {
-            Alias = "isPublished",
-            Name = "Is Published",
+            Alias = "isActive",
+            Name = "Is Active",
             SortOrder = 3,
             Variations = docType.Variations
         });

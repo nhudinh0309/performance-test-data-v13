@@ -6,10 +6,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core;
+using Umbraco.Cms.Core.Cache;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Notifications;
-using Umbraco.Cms.Core.PublishedCache;
 using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
+using Umbraco.Extensions;
 
 /// <summary>
 /// Notification handler that orchestrates the execution of all seeders in the correct order.
@@ -23,8 +24,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
     private readonly SeederConfigurationValidator _validator;
     private readonly SeederConfiguration _config;
     private readonly SeederStatusService _statusService;
-    private readonly IPublishedSnapshotService _publishedSnapshotService;
     private readonly IRuntimeState _runtimeState;
+    private readonly DistributedCache _distributedCache;
 
     /// <summary>
     /// Creates a new SeederOrchestrator instance.
@@ -36,8 +37,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         IOptions<SeederConfiguration> config,
         SeederConfigurationValidator validator,
         SeederStatusService statusService,
-        IPublishedSnapshotService publishedSnapshotService,
-        IRuntimeState runtimeState)
+        IRuntimeState runtimeState,
+        DistributedCache distributedCache)
     {
         // Sort seeders by execution order
         _seeders = seeders.OrderBy(s => s.ExecutionOrder).ToList();
@@ -46,8 +47,8 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         _config = config.Value;
         _validator = validator;
         _statusService = statusService;
-        _publishedSnapshotService = publishedSnapshotService;
         _runtimeState = runtimeState;
+        _distributedCache = distributedCache;
     }
 
     /// <summary>
@@ -55,6 +56,13 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
     /// </summary>
     public async Task HandleAsync(UmbracoApplicationStartedNotification notification, CancellationToken cancellationToken)
     {
+        if (_runtimeState.Level != RuntimeLevel.Run)
+        {
+            _logger.LogDebug("PerformanceTestDataSeeder: Umbraco is not fully installed (Level: {Level}), skipping", _runtimeState.Level);
+            _statusService.SetSkipped();
+            return;
+        }
+
         if (!_options.Enabled)
         {
             _logger.LogInformation("PerformanceTestDataSeeder: Disabled in configuration, skipping all seeders");
@@ -97,6 +105,7 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
         var totalStopwatch = Stopwatch.StartNew();
         var executedCount = 0;
         var failedCount = 0;
+        var seederTimings = new List<(string Name, string Status, long ElapsedMs)>();
 
         try
         {
@@ -109,19 +118,26 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
                 }
 
                 _statusService.SetCurrentSeeder(seeder.SeederName);
+                var seederStopwatch = Stopwatch.StartNew();
 
                 try
                 {
                     await seeder.ExecuteAsync(cancellationToken);
+                    seederStopwatch.Stop();
                     executedCount++;
+                    seederTimings.Add((seeder.SeederName, "OK", seederStopwatch.ElapsedMilliseconds));
                 }
                 catch (OperationCanceledException)
                 {
+                    seederStopwatch.Stop();
+                    seederTimings.Add((seeder.SeederName, "Cancelled", seederStopwatch.ElapsedMilliseconds));
                     throw;
                 }
                 catch (Exception ex)
                 {
+                    seederStopwatch.Stop();
                     failedCount++;
+                    seederTimings.Add((seeder.SeederName, "FAILED", seederStopwatch.ElapsedMilliseconds));
                     _logger.LogError(ex, "PerformanceTestDataSeeder: Seeder {SeederName} failed", seeder.SeederName);
 
                     if (_options.StopOnError)
@@ -132,41 +148,63 @@ public class SeederOrchestrator : INotificationAsyncHandler<UmbracoApplicationSt
                 }
             }
 
-            // Rebuild published content cache to include newly created content and media
+            // Reload the in-memory published cache (content, media, domains)
+            // This is equivalent to clicking "Reload Memory Cache" in the backoffice
             if (_options.RebuildCacheAfterSeeding && _runtimeState.Level == RuntimeLevel.Run)
             {
                 try
                 {
-                    _logger.LogInformation("PerformanceTestDataSeeder: Rebuilding published content cache...");
-                    _publishedSnapshotService.Rebuild();
-                    _logger.LogInformation("PerformanceTestDataSeeder: Published content cache rebuilt");
+                    _logger.LogInformation("PerformanceTestDataSeeder: Reloading published memory cache...");
+                    _distributedCache.RefreshAllPublishedSnapshot();
+                    _logger.LogInformation("PerformanceTestDataSeeder: Published memory cache reload complete");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "PerformanceTestDataSeeder: Could not rebuild cache automatically. " +
-                        "Please rebuild manually via Umbraco backoffice: Settings > Published Status > Rebuild");
+                    _logger.LogWarning(ex, "PerformanceTestDataSeeder: Failed to refresh published cache. Seeded data was created successfully but may not appear until the cache is manually refreshed");
                 }
-            }
-            else if (_options.RebuildCacheAfterSeeding)
-            {
-                _logger.LogInformation("PerformanceTestDataSeeder: Skipping cache rebuild (Umbraco Level={Level}). " +
-                    "Restart the application to rebuild cache.", _runtimeState.Level);
             }
 
             totalStopwatch.Stop();
             _statusService.SetCompleted(executedCount, failedCount, totalStopwatch.ElapsedMilliseconds);
 
-            _logger.LogInformation(
-                "PerformanceTestDataSeeder: Orchestration complete - {Executed} seeders executed, {Failed} failed, total time: {ElapsedMs}ms",
-                executedCount,
-                failedCount,
-                totalStopwatch.ElapsedMilliseconds);
+            // Log summary table
+            LogSummary(seederTimings, executedCount, failedCount, totalStopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             totalStopwatch.Stop();
             _statusService.SetFailed(ex.Message);
+
+            // Still log summary even on failure
+            LogSummary(seederTimings, executedCount, failedCount, totalStopwatch.ElapsedMilliseconds);
             throw;
         }
+    }
+
+    private void LogSummary(List<(string Name, string Status, long ElapsedMs)> timings, int executed, int failed, long totalMs)
+    {
+        _logger.LogInformation("PerformanceTestDataSeeder: ========== SEEDING SUMMARY ==========");
+
+        foreach (var (name, status, elapsedMs) in timings)
+        {
+            var time = FormatDuration(elapsedMs);
+            _logger.LogInformation("PerformanceTestDataSeeder:   {Name,-25} {Status,-10} {Time,10}",
+                name, status, time);
+        }
+
+        _logger.LogInformation("PerformanceTestDataSeeder:   {Label,-25} {Blank,-10} {Time,10}",
+            "---", "", "----------");
+        _logger.LogInformation("PerformanceTestDataSeeder:   {Label,-25} {Stats,-10} {Time,10}",
+            "TOTAL", $"{executed} ok, {failed} failed", FormatDuration(totalMs));
+        _logger.LogInformation("PerformanceTestDataSeeder: =====================================");
+    }
+
+    private static string FormatDuration(long ms)
+    {
+        if (ms < 1000) return $"{ms}ms";
+        if (ms < 60_000) return $"{ms / 1000.0:F1}s";
+        var minutes = ms / 60_000;
+        var seconds = (ms % 60_000) / 1000.0;
+        return $"{minutes}m {seconds:F0}s";
     }
 }

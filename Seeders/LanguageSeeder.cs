@@ -14,7 +14,7 @@ using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 /// </summary>
 public class LanguageSeeder : BaseSeeder<LanguageSeeder>
 {
-    private readonly ILocalizationService _localizationService;
+    private readonly ILanguageService _languageService;
 
     /// <summary>
     /// Default pool of cultures to choose from.
@@ -33,7 +33,7 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
     /// Creates a new LanguageSeeder instance.
     /// </summary>
     public LanguageSeeder(
-        ILocalizationService localizationService,
+        ILanguageService languageService,
         IScopeProvider scopeProvider,
         ILogger<LanguageSeeder> logger,
         IRuntimeState runtimeState,
@@ -42,7 +42,7 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
         SeederExecutionContext context)
         : base(logger, runtimeState, config, options, context, scopeProvider)
     {
-        _localizationService = localizationService;
+        _languageService = languageService;
     }
 
     /// <inheritdoc />
@@ -57,15 +57,15 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
     /// <inheritdoc />
     protected override bool IsAlreadySeeded()
     {
-        var existing = _localizationService.GetAllLanguages().ToList();
+        var existing = _languageService.GetAllAsync().GetAwaiter().GetResult().ToList();
         return existing.Count >= Config.Languages.Count;
     }
 
     /// <inheritdoc />
-    protected override Task SeedAsync(CancellationToken cancellationToken)
+    protected override async Task SeedAsync(CancellationToken cancellationToken)
     {
         var targetCount = Config.Languages.Count;
-        var existing = _localizationService.GetAllLanguages().ToList();
+        var existing = (await _languageService.GetAllAsync()).ToList();
         var existingCodes = existing.Select(l => l.IsoCode).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Use custom cultures if configured, otherwise use defaults
@@ -78,15 +78,18 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
         if (culturesToCreate.Count == 0)
         {
             Logger.LogInformation("All target languages already exist");
-            return Task.CompletedTask;
+            return;
         }
 
         if (IsDryRun)
         {
             Logger.LogInformation("[DRY-RUN] Would create {Count} languages: {Cultures}",
                 culturesToCreate.Count, string.Join(", ", culturesToCreate));
-            return Task.CompletedTask;
+            return;
         }
+
+        // Use the Umbraco super user key for write operations
+        var userKey = Umbraco.Cms.Core.Constants.Security.SuperUserKey;
 
         int created = 0;
         using (var scope = CreateScopedBatch())
@@ -107,7 +110,7 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
                         FallbackIsoCode = null
                     };
 
-                    _localizationService.Save(lang);
+                    await _languageService.CreateAsync(lang, userKey);
                     created++;
 
                     LogProgress(created, culturesToCreate.Count, "languages");
@@ -122,11 +125,9 @@ public class LanguageSeeder : BaseSeeder<LanguageSeeder>
         }
 
         // Cache languages in context for other seeders
-        Context.SetLanguages(_localizationService.GetAllLanguages());
+        Context.SetLanguages(await _languageService.GetAllAsync());
 
         Logger.LogInformation("Seeded {Created} languages (total: {Total}, target: {Target})",
             created, Context.Languages.Count, targetCount);
-
-        return Task.CompletedTask;
     }
 }

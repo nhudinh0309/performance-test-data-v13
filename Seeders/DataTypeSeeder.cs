@@ -54,12 +54,12 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
     protected override bool IsAlreadySeeded()
     {
         var prefix = GetPrefix(PrefixType.DataType);
-        var existing = _dataTypeService.GetAll();
+        var existing = _dataTypeService.GetAllAsync(Array.Empty<Guid>()).GetAwaiter().GetResult();
         return existing.Any(d => d.Name?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
     }
 
     /// <inheritdoc />
-    protected override Task SeedAsync(CancellationToken cancellationToken)
+    protected override async Task SeedAsync(CancellationToken cancellationToken)
     {
         var dataTypesConfig = Config.DataTypes;
         var prefix = GetPrefix(PrefixType.DataType);
@@ -72,8 +72,8 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 dataTypesConfig.ListView, dataTypesConfig.MultiNodeTreePicker, dataTypesConfig.RichTextEditor,
                 dataTypesConfig.MediaPicker, dataTypesConfig.Textarea, dataTypesConfig.Dropdown, dataTypesConfig.Numeric);
             // Still load built-in data types for DryRun validation
-            LoadBuiltInDataTypes();
-            return Task.CompletedTask;
+            await LoadBuiltInDataTypesAsync();
+            return;
         }
 
         int totalCreated = 0;
@@ -82,38 +82,38 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         using (var scope = CreateScopedBatch())
         {
             // Create each type of data type
-            totalCreated += CreateListViewDataTypes(prefix, dataTypesConfig.ListView, cancellationToken);
-            totalCreated += CreateMultiNodeTreePickerDataTypes(prefix, dataTypesConfig.MultiNodeTreePicker, cancellationToken);
-            totalCreated += CreateRichTextEditorDataTypes(prefix, dataTypesConfig.RichTextEditor, cancellationToken);
-            totalCreated += CreateMediaPickerDataTypes(prefix, dataTypesConfig.MediaPicker, cancellationToken);
-            totalCreated += CreateTextareaDataTypes(prefix, dataTypesConfig.Textarea, cancellationToken);
-            totalCreated += CreateDropdownDataTypes(prefix, dataTypesConfig.Dropdown, cancellationToken);
-            totalCreated += CreateNumericDataTypes(prefix, dataTypesConfig.Numeric, cancellationToken);
+            totalCreated += await CreateListViewDataTypes(prefix, dataTypesConfig.ListView, cancellationToken);
+            totalCreated += await CreateMultiNodeTreePickerDataTypes(prefix, dataTypesConfig.MultiNodeTreePicker, cancellationToken);
+            totalCreated += await CreateRichTextEditorDataTypes(prefix, dataTypesConfig.RichTextEditor, cancellationToken);
+            totalCreated += await CreateMediaPickerDataTypes(prefix, dataTypesConfig.MediaPicker, cancellationToken);
+            totalCreated += await CreateTextareaDataTypes(prefix, dataTypesConfig.Textarea, cancellationToken);
+            totalCreated += await CreateDropdownDataTypes(prefix, dataTypesConfig.Dropdown, cancellationToken);
+            totalCreated += await CreateNumericDataTypes(prefix, dataTypesConfig.Numeric, cancellationToken);
 
             scope.Complete();
         }
 
         // Load and cache built-in data types for other seeders
-        LoadBuiltInDataTypes();
+        await LoadBuiltInDataTypesAsync();
 
         Logger.LogInformation(
             "Seeded {Created} data types (target: {Target}). Block List/Grid will be created after Element Types.",
             totalCreated, totalTarget);
-
-        return Task.CompletedTask;
     }
 
-    private void LoadBuiltInDataTypes()
+    private async Task LoadBuiltInDataTypesAsync()
     {
-        Context.TextstringDataType = _dataTypeService.GetDataType(Constants.DataTypes.Textbox);
-        Context.TextareaDataType = _dataTypeService.GetDataType(Constants.DataTypes.Textarea);
-        Context.TrueFalseDataType = _dataTypeService.GetDataType(Constants.DataTypes.Boolean);
-        Context.LabelDataType = _dataTypeService.GetDataType(Constants.DataTypes.LabelString);
-        Context.UploadDataType = _dataTypeService.GetDataType(Constants.DataTypes.Upload);
-        Context.DateTimeDataType = _dataTypeService.GetDataType(Constants.DataTypes.DateTime);
+        // Load all data types in one async call instead of individual sync lookups
+        var allDataTypes = (await _dataTypeService.GetAllAsync(Array.Empty<Guid>())).ToList();
+
+        Context.TextstringDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Textbox);
+        Context.TextareaDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Textarea);
+        Context.TrueFalseDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Boolean);
+        Context.LabelDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.LabelString);
+        Context.UploadDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.Upload);
+        Context.DateTimeDataType = allDataTypes.FirstOrDefault(d => d.Id == Constants.DataTypes.DateTime);
 
         // Get data types by editor alias
-        var allDataTypes = _dataTypeService.GetAll().ToList();
         Context.NumericDataType = allDataTypes.FirstOrDefault(d =>
             d.EditorAlias == Constants.PropertyEditors.Aliases.Integer);
         Context.ContentPickerDataType = allDataTypes.FirstOrDefault(d =>
@@ -130,7 +130,15 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         Logger.LogDebug("Cached {Count} data types for other seeders", allDataTypes.Count);
     }
 
-    private int CreateListViewDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    /// <summary>
+    /// Converts a configuration object to ConfigurationData dictionary using the editor's configuration editor.
+    /// </summary>
+    private IDictionary<string, object> ToConfigurationData(IDataEditor editor, object configObject)
+    {
+        return editor.GetConfigurationEditor().FromConfigurationObject(configObject, _serializer);
+    }
+
+    private async Task<int> CreateListViewDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -141,6 +149,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -152,10 +161,11 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Nvarchar
+                    DatabaseType = ValueStorageType.Nvarchar,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "ListView data types");
             }
@@ -169,7 +179,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateMultiNodeTreePickerDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateMultiNodeTreePickerDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -180,6 +190,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -191,7 +202,8 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
                 var config = new MultiNodePickerConfiguration
@@ -204,9 +216,9 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                     MinNumber = 0,
                     IgnoreUserStartNodes = false
                 };
-                dataType.Configuration = config;
+                dataType.ConfigurationData = ToConfigurationData(editor, config);
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "MNTP data types");
             }
@@ -220,17 +232,18 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateRichTextEditorDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateRichTextEditorDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
-        var editor = _propertyEditors[Constants.PropertyEditors.Aliases.TinyMce];
+        var editor = _propertyEditors[Constants.PropertyEditors.Aliases.RichText];
         if (editor == null)
         {
-            Logger.LogWarning("TinyMce property editor not found");
+            Logger.LogWarning("RichText property editor not found");
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -242,10 +255,11 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "RTE data types");
             }
@@ -259,7 +273,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateMediaPickerDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateMediaPickerDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -270,6 +284,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -281,10 +296,11 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "MediaPicker data types");
             }
@@ -298,7 +314,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateTextareaDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateTextareaDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -309,6 +325,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -320,10 +337,11 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "Textarea data types");
             }
@@ -337,7 +355,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateDropdownDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateDropdownDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -348,6 +366,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -359,24 +378,25 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Nvarchar
+                    DatabaseType = ValueStorageType.Nvarchar,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
                 var config = new DropDownFlexibleConfiguration
                 {
-                    Items = new List<ValueListConfiguration.ValueListItem>
+                    Items = new List<string>
                     {
-                        new() { Id = 1, Value = "Option 1" },
-                        new() { Id = 2, Value = "Option 2" },
-                        new() { Id = 3, Value = "Option 3" },
-                        new() { Id = 4, Value = "Option 4" },
-                        new() { Id = 5, Value = "Option 5" }
+                        "Option 1",
+                        "Option 2",
+                        "Option 3",
+                        "Option 4",
+                        "Option 5"
                     },
                     Multiple = i % 2 == 0
                 };
-                dataType.Configuration = config;
+                dataType.ConfigurationData = ToConfigurationData(editor, config);
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "Dropdown data types");
             }
@@ -390,7 +410,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         return created;
     }
 
-    private int CreateNumericDataTypes(string prefix, int count, CancellationToken cancellationToken)
+    private async Task<int> CreateNumericDataTypes(string prefix, int count, CancellationToken cancellationToken)
     {
         if (count <= 0) return 0;
 
@@ -401,6 +421,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
             return 0;
         }
 
+        var userKey = Constants.Security.SuperUserKey;
         int created = 0;
         for (int i = 1; i <= count; i++)
         {
@@ -412,10 +433,11 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Integer
+                    DatabaseType = ValueStorageType.Integer,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
-                _dataTypeService.Save(dataType);
+                await _dataTypeService.CreateAsync(dataType, userKey);
                 created++;
                 LogProgress(created, count, "Numeric data types");
             }

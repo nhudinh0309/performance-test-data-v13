@@ -12,7 +12,7 @@ using Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 /// </summary>
 public partial class DocumentTypeSeeder
 {
-    private List<IDataType> CreateBlockGridDataTypes(int count, CancellationToken cancellationToken)
+    private async Task<List<IDataType>> CreateBlockGridDataTypes(int count, CancellationToken cancellationToken)
     {
         var blockGridDataTypes = new List<IDataType>();
         var editor = _propertyEditors[Constants.PropertyEditors.Aliases.BlockGrid];
@@ -23,6 +23,7 @@ public partial class DocumentTypeSeeder
         }
 
         var prefix = GetPrefix(PrefixType.DataType);
+        var userKey = Constants.Security.SuperUserKey;
 
         for (int i = 0; i < count; i++)
         {
@@ -34,7 +35,8 @@ public partial class DocumentTypeSeeder
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
-                    DatabaseType = ValueStorageType.Ntext
+                    DatabaseType = ValueStorageType.Ntext,
+                    EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
 
                 // Add up to MaxBlocksPerEditor blocks (cycling through element types)
@@ -54,7 +56,6 @@ public partial class DocumentTypeSeeder
                         blocks.Add(new BlockGridConfiguration.BlockGridBlockConfiguration
                         {
                             ContentElementTypeKey = container.Key,
-                            Label = container.Name,
                             AllowAtRoot = true,
                             AllowInAreas = false // Containers shouldn't go inside areas, they define areas
                         });
@@ -72,22 +73,28 @@ public partial class DocumentTypeSeeder
                     blocks.Add(new BlockGridConfiguration.BlockGridBlockConfiguration
                     {
                         ContentElementTypeKey = elementType.Key,
-                        Label = elementType.Name,
                         AllowAtRoot = true,
                         AllowInAreas = true // Regular blocks can go inside areas
                     });
                 }
 
-                dataType.Configuration = new BlockGridConfiguration
+                var blockGridConfig = new BlockGridConfiguration
                 {
                     Blocks = blocks.ToArray(),
                     GridColumns = SeederConstants.DefaultGridColumns
                 };
+                dataType.ConfigurationData = editor.GetConfigurationEditor().FromConfigurationObject(blockGridConfig, _serializer);
 
-                _dataTypeService.Save(dataType);
-                blockGridDataTypes.Add(dataType);
-
-                LogProgress(i + 1, count, "Block Grid data types");
+                var result = await _dataTypeService.CreateAsync(dataType, userKey);
+                if (result.Success)
+                {
+                    blockGridDataTypes.Add(result.Result);
+                    LogProgress(i + 1, count, "Block Grid data types");
+                }
+                else
+                {
+                    Logger.LogWarning("Failed to create Block Grid data type {Name}: {Status}", name, result.Status);
+                }
             }
             catch (Exception ex)
             {

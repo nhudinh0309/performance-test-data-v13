@@ -48,6 +48,10 @@ public class SeederConfigurationSetup : IConfigureOptions<SeederConfiguration>
         // Users
         target.Users.Count = source.Users.Count;
 
+        // Members
+        target.Members.Count = source.Members.Count;
+        target.Members.DefaultPassword = source.Members.DefaultPassword;
+
         // DataTypes
         target.DataTypes.ListView = source.DataTypes.ListView;
         target.DataTypes.MultiNodeTreePicker = source.DataTypes.MultiNodeTreePicker;
@@ -92,6 +96,9 @@ public class SeederConfigurationSetup : IConfigureOptions<SeederConfiguration>
         target.Content.SimplePercent = source.Content.SimplePercent;
         target.Content.MediumPercent = source.Content.MediumPercent;
         target.Content.ComplexPercent = source.Content.ComplexPercent;
+        target.Content.DetailSimplePercent = source.Content.DetailSimplePercent;
+        target.Content.DetailMediumPercent = source.Content.DetailMediumPercent;
+        target.Content.DetailComplexPercent = source.Content.DetailComplexPercent;
         target.Content.RootSections = source.Content.RootSections;
         target.Content.CategoriesPerSection = source.Content.CategoriesPerSection;
         target.Content.PagesPerCategory = source.Content.PagesPerCategory;

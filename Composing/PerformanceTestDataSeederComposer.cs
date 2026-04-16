@@ -52,6 +52,8 @@ public class PerformanceTestDataSeederComposer : IComposer
         builder.Services.AddTransient<ISeeder, MediaSeeder>();
         builder.Services.AddTransient<ISeeder, ContentSeeder>();
         builder.Services.AddTransient<ISeeder, UserSeeder>();
+        builder.Services.AddTransient<ISeeder, MemberSeeder>();
+        builder.Services.AddTransient<ISeeder, ContactFormSeeder>();
 
         // Register orchestrator as notification handler
         // This runs all seeders after Umbraco has fully started

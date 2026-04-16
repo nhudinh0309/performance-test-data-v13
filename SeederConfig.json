@@ -11,6 +11,12 @@
     "Users": {
       "Count": 30
     },
+    "Members": {
+      "Count": 30,
+      "StandardPercent": 40,
+      "PremiumPercent": 35,
+      "VIPPercent": 25
+    },
     "DataTypes": {
       "ListView": 30,
       "MultiNodeTreePicker": 40,
@@ -61,6 +67,9 @@
       "SimplePercent": 50,
       "MediumPercent": 30,
       "ComplexPercent": 20,
+      "DetailSimplePercent": 60,
+      "DetailMediumPercent": 30,
+      "DetailComplexPercent": 10,
       "RootSections": 50,
       "CategoriesPerSection": 10,
       "PagesPerCategory": 100

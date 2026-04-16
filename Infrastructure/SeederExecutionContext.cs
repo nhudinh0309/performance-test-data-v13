@@ -43,6 +43,7 @@ public class SeederExecutionContext
     private readonly List<IContentType> _simpleDocTypes = new();
     private readonly List<IContentType> _mediumDocTypes = new();
     private readonly List<IContentType> _complexDocTypes = new();
+    private readonly List<IContentType> _detailDocTypes = new();
     private readonly List<IDataType> _blockListDataTypes = new();
     private readonly List<IDataType> _blockGridDataTypes = new();
     private readonly List<IMedia> _mediaItems = new();
@@ -72,6 +73,11 @@ public class SeederExecutionContext
     /// Complex document types created by DocumentTypeSeeder.
     /// </summary>
     public IReadOnlyList<IContentType> ComplexDocTypes => _complexDocTypes;
+
+    /// <summary>
+    /// Detail (leaf) document types without Collection view.
+    /// </summary>
+    public IReadOnlyList<IContentType> DetailDocTypes => _detailDocTypes;
 
     /// <summary>
     /// Block List data types created by DocumentTypeSeeder.
@@ -125,6 +131,12 @@ public class SeederExecutionContext
 
     /// <summary>Adds complex document types to the cache.</summary>
     public void AddComplexDocTypes(IEnumerable<IContentType> docTypes) => _complexDocTypes.AddRange(docTypes);
+
+    /// <summary>Adds a detail document type to the cache.</summary>
+    public void AddDetailDocType(IContentType docType) => _detailDocTypes.Add(docType);
+
+    /// <summary>Adds detail document types to the cache.</summary>
+    public void AddDetailDocTypes(IEnumerable<IContentType> docTypes) => _detailDocTypes.AddRange(docTypes);
 
     /// <summary>Adds block list data types to the cache.</summary>
     public void AddBlockListDataTypes(IEnumerable<IDataType> dataTypes) => _blockListDataTypes.AddRange(dataTypes);

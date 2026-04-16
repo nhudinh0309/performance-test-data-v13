@@ -1,11 +1,38 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
+using Umbraco.Cms.Core;
+
 /// <summary>
 /// Constants used throughout the seeder package.
 /// These values are not user-configurable but document important limits and defaults.
 /// </summary>
 public static class SeederConstants
 {
+    /// <summary>
+    /// Maps backend property editor aliases to their v14+ backoffice UI aliases.
+    /// Required when creating DataTypes programmatically — the EditorUiAlias must be set
+    /// for the new backoffice to render the property editor correctly.
+    /// </summary>
+    public static readonly Dictionary<string, string> EditorUiAliasMap = new()
+    {
+        [Constants.PropertyEditors.Aliases.ListView] = "Umb.PropertyEditorUi.Collection",
+        [Constants.PropertyEditors.Aliases.MultiNodeTreePicker] = "Umb.PropertyEditorUi.ContentPicker",
+        [Constants.PropertyEditors.Aliases.RichText] = "Umb.PropertyEditorUi.Tiptap",
+        [Constants.PropertyEditors.Aliases.MediaPicker3] = "Umb.PropertyEditorUi.MediaPicker",
+        [Constants.PropertyEditors.Aliases.TextArea] = "Umb.PropertyEditorUi.TextArea",
+        [Constants.PropertyEditors.Aliases.DropDownListFlexible] = "Umb.PropertyEditorUi.Dropdown",
+        [Constants.PropertyEditors.Aliases.Integer] = "Umb.PropertyEditorUi.Integer",
+        [Constants.PropertyEditors.Aliases.BlockList] = "Umb.PropertyEditorUi.BlockList",
+        [Constants.PropertyEditors.Aliases.BlockGrid] = "Umb.PropertyEditorUi.BlockGrid",
+    };
+
+    /// <summary>
+    /// Gets the EditorUiAlias for a given backend property editor alias.
+    /// Returns null if no mapping exists.
+    /// </summary>
+    public static string? GetEditorUiAlias(string editorAlias)
+        => EditorUiAliasMap.TryGetValue(editorAlias, out var uiAlias) ? uiAlias : null;
+
     /// <summary>
     /// Default maximum number of block elements to add to a Block List or Block Grid.
     /// This value is configurable via DocumentTypes.MaxBlocksPerEditor in SeederConfiguration.
