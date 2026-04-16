@@ -143,6 +143,9 @@ public class SeederConfigurationValidator
         ValidateNonNegative(config.SimplePercent, "Content.SimplePercent", errors);
         ValidateNonNegative(config.MediumPercent, "Content.MediumPercent", errors);
         ValidateNonNegative(config.ComplexPercent, "Content.ComplexPercent", errors);
+        ValidateNonNegative(config.DetailSimplePercent, "Content.DetailSimplePercent", errors);
+        ValidateNonNegative(config.DetailMediumPercent, "Content.DetailMediumPercent", errors);
+        ValidateNonNegative(config.DetailComplexPercent, "Content.DetailComplexPercent", errors);
         ValidateNonNegative(config.RootSections, "Content.RootSections", errors);
         ValidateNonNegative(config.CategoriesPerSection, "Content.CategoriesPerSection", errors);
         ValidateNonNegative(config.PagesPerCategory, "Content.PagesPerCategory", errors);
@@ -152,6 +155,12 @@ public class SeederConfigurationValidator
         if (percentSum != 100)
         {
             errors.Add($"Content percentages must sum to 100 (SimplePercent + MediumPercent + ComplexPercent = {percentSum})");
+        }
+
+        var detailPercentSum = config.DetailSimplePercent + config.DetailMediumPercent + config.DetailComplexPercent;
+        if (detailPercentSum != 100)
+        {
+            errors.Add($"Detail page percentages must sum to 100 (DetailSimplePercent + DetailMediumPercent + DetailComplexPercent = {detailPercentSum})");
         }
 
         // Validate individual percentages are valid

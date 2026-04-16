@@ -8,6 +8,7 @@ A configurable dummy data seeder for Umbraco CMS v17+ designed for performance a
 - **Collection (List View)** on parent doc types (Section, Category, Page) with allowed child nodes
 - **Member login system** - seeded members with passwords, login/member area pages, and API endpoints for load testing authentication flows
 - **Contact form** - rendered contact page with submissions persisted to the Umbraco database for verifying full pipeline under load
+- **Block content population** - BlockList and BlockGrid properties on medium/complex content nodes are populated with element data (simple, medium, complex blocks with nested structures)
 - **Nested blocks support** - configurable depth of blocks within blocks for realistic load testing
 - Fully configurable via `appsettings.json`
 - Reproducible test data with configurable Faker seed

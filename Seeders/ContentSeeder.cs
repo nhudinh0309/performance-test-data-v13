@@ -149,8 +149,9 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
         Context.AddDetailDocTypes(allTypes.Where(t =>
-            t.Alias.StartsWith("testDetail", StringComparison.OrdinalIgnoreCase)));
+            t.Alias.StartsWith(detailPrefix, StringComparison.OrdinalIgnoreCase)));
 
         Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Detail: {Detail}",
             Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
@@ -165,11 +166,12 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
 
     /// <summary>
     /// Pre-loads all data types into Context.DataTypeCache to avoid repeated GetAllAsync calls
-    /// during block content generation.
+    /// during block content generation. Always reloads fresh from DB to include block data types
+    /// created by DocumentTypeSeeder after the initial cache was populated.
     /// </summary>
     private async Task PreloadDataTypeCacheAsync()
     {
-        if (Context.DataTypeCache.Count > 0) return;
+        Context.DataTypeCache.Clear();
 
         var allDataTypes = await _dataTypeService.GetAllAsync(Array.Empty<Guid>());
         foreach (var dt in allDataTypes)
@@ -231,8 +233,10 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         if (IsDryRun)
         {
             Logger.LogInformation("[DRY-RUN] Would create content tree with target: {Target} items", targetTotal);
-            Logger.LogInformation("[DRY-RUN] Distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
+            Logger.LogInformation("[DRY-RUN] Page distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
                 contentConfig.SimplePercent, contentConfig.MediumPercent, contentConfig.ComplexPercent);
+            Logger.LogInformation("[DRY-RUN] Detail page distribution - Simple: {Simple}%, Medium: {Medium}%, Complex: {Complex}%",
+                contentConfig.DetailSimplePercent, contentConfig.DetailMediumPercent, contentConfig.DetailComplexPercent);
         }
 
         int batchCount = 0;
@@ -318,15 +322,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var (detailComplexity, _) = DetermineComplexity(
-                                        simpleCreated, mediumCreated, complexCreated,
-                                        simpleTarget, mediumTarget, complexTarget);
+                                    // Detail pages use a configurable distribution to provide
+                                    // realistic variety for load testing while limiting costly complex pages
+                                    var detailRoll = Context.Random.Next(100);
+                                    var detailComplexity = detailRoll < contentConfig.DetailSimplePercent
+                                        ? "simple"
+                                        : detailRoll < contentConfig.DetailSimplePercent + contentConfig.DetailMediumPercent
+                                            ? "medium"
+                                            : "complex";
                                     var detailDocType = GetRandomDetailDocType(detailComplexity);
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
                                         pageParentId, detailDocType, detailComplexity);
                                     if (detailContent != null) Context.AddContent(detailContent);
-
                                     switch (detailComplexity)
                                     {
                                         case "simple": simpleCreated++; break;
@@ -767,6 +775,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var blockJson = GenerateSimpleBlockListJson(content, "blocks");
             if (!string.IsNullOrEmpty(blockJson))
                 content.SetValue("blocks", blockJson, GetCulture(content, "blocks", culture));
+            else
+                Logger.LogDebug("No block JSON generated for 'blocks' on {Name} ({Alias})", content.Name, content.ContentType.Alias);
         }
     }
 
@@ -867,13 +877,26 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateSimpleBlockListJson(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockListConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockList: No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var simpleBlock = FindBlockByComplexity(blockConfig.Blocks, "Simple");
-        if (simpleBlock == null) return null;
+        if (simpleBlock == null)
+        {
+            Logger.LogDebug("BlockList: No Simple block found in config for '{Alias}' ({BlockCount} blocks available)",
+                propertyAlias, blockConfig.Blocks.Length);
+            return null;
+        }
 
-        var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
-        if (elementType == null) return null;
+        var elementType = GetCachedContentTypeByKey(simpleBlock.ContentElementTypeKey);
+        if (elementType == null)
+        {
+            Logger.LogWarning("BlockList: Element type {Key} not found for Simple block", simpleBlock.ContentElementTypeKey);
+            return null;
+        }
 
         var contentKey = Guid.NewGuid();
         var contentData = BuildElementContentDataObject(elementType, simpleBlock.ContentElementTypeKey, contentKey);
@@ -895,7 +918,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateBlockListJsonWithAllComplexities(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockListConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockList (all complexities): No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
@@ -905,7 +932,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -922,7 +949,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();
@@ -950,7 +977,11 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
     private string? GenerateBlockGridJson(IContent content, string propertyAlias)
     {
         var blockConfig = GetBlockGridConfiguration(content, propertyAlias);
-        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0) return null;
+        if (blockConfig?.Blocks == null || blockConfig.Blocks.Length == 0)
+        {
+            Logger.LogDebug("BlockGrid: No config/blocks for '{Alias}' on {ContentType}", propertyAlias, content.ContentType.Alias);
+            return null;
+        }
 
         var layoutItems = new List<Dictionary<string, object?>>();
         var contentDataItems = new List<Dictionary<string, object>>();
@@ -960,7 +991,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -977,7 +1008,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockGridByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();
@@ -1153,7 +1184,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null && currentDepth < maxDepth)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentKey = Guid.NewGuid();
@@ -1171,7 +1202,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentKey = Guid.NewGuid();
@@ -1280,6 +1311,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockListConfiguration;
+        if (dataType != null && config == null)
+        {
+            Logger.LogWarning("BlockList config cast failed for property '{Alias}' on content type {TypeId}. " +
+                "DataTypeId={DataTypeId}, ConfigurationObject type: {ActualType}",
+                propertyAlias, content.ContentTypeId, propertyType.DataTypeId,
+                dataType.ConfigurationObject?.GetType().FullName ?? "null");
+        }
+        else if (dataType == null)
+        {
+            Logger.LogWarning("BlockList data type not found in cache for property '{Alias}', DataTypeId={DataTypeId}",
+                propertyAlias, propertyType.DataTypeId);
+        }
+
         _blockListConfigCache[cacheKey] = config;
         return config;
     }
@@ -1310,6 +1354,19 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         Context.DataTypeCache.TryGetValue(propertyType.DataTypeId, out var dataType);
 
         var config = dataType?.ConfigurationObject as BlockGridConfiguration;
+        if (dataType != null && config == null)
+        {
+            Logger.LogWarning("BlockGrid config cast failed for property '{Alias}' on content type {TypeId}. " +
+                "DataTypeId={DataTypeId}, ConfigurationObject type: {ActualType}",
+                propertyAlias, content.ContentTypeId, propertyType.DataTypeId,
+                dataType.ConfigurationObject?.GetType().FullName ?? "null");
+        }
+        else if (dataType == null)
+        {
+            Logger.LogWarning("BlockGrid data type not found in cache for property '{Alias}', DataTypeId={DataTypeId}",
+                propertyAlias, propertyType.DataTypeId);
+        }
+
         _blockGridConfigCache[cacheKey] = config;
         return config;
     }

@@ -306,6 +306,21 @@ public class ContentConfig
     public int ComplexPercent { get; set; } = 20;
 
     /// <summary>
+    /// Percentage of simple detail pages (must sum to 100 with DetailMediumPercent and DetailComplexPercent).
+    /// </summary>
+    public int DetailSimplePercent { get; set; } = 60;
+
+    /// <summary>
+    /// Percentage of medium detail pages (must sum to 100 with DetailSimplePercent and DetailComplexPercent).
+    /// </summary>
+    public int DetailMediumPercent { get; set; } = 30;
+
+    /// <summary>
+    /// Percentage of complex detail pages (must sum to 100 with DetailSimplePercent and DetailMediumPercent).
+    /// </summary>
+    public int DetailComplexPercent { get; set; } = 10;
+
+    /// <summary>
     /// Number of root sections in content tree.
     /// </summary>
     public int RootSections { get; set; } = 50;

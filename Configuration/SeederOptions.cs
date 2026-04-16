@@ -13,6 +13,8 @@ public enum PrefixType
     VariantDocType,
     /// <summary>Invariant document type prefix.</summary>
     InvariantDocType,
+    /// <summary>Detail (leaf) document type prefix.</summary>
+    DetailDocType,
     /// <summary>Media item prefix.</summary>
     Media,
     /// <summary>Content node prefix.</summary>
@@ -278,6 +280,11 @@ public class SeederPrefixes
     /// Prefix for invariant document type aliases. Default: "testInvariant"
     /// </summary>
     public string InvariantDocType { get; set; } = "testInvariant";
+
+    /// <summary>
+    /// Prefix for detail (leaf) document type aliases. Default: "testDetail"
+    /// </summary>
+    public string DetailDocType { get; set; } = "testDetail";
 
     /// <summary>
     /// Prefix for media item names. Default: "Test_"
