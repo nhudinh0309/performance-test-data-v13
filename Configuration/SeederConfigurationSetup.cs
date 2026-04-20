@@ -51,6 +51,9 @@ public class SeederConfigurationSetup : IConfigureOptions<SeederConfiguration>
         // Members
         target.Members.Count = source.Members.Count;
         target.Members.DefaultPassword = source.Members.DefaultPassword;
+        target.Members.StandardPercent = source.Members.StandardPercent;
+        target.Members.PremiumPercent = source.Members.PremiumPercent;
+        target.Members.VIPPercent = source.Members.VIPPercent;
 
         // DataTypes
         target.DataTypes.ListView = source.DataTypes.ListView;

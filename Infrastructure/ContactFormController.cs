@@ -84,7 +84,7 @@ public class ContactFormController : Controller
         }
 
         TempData["ContactFormSuccess"] = $"Thank you {request.Name}, your message has been received.";
-        return Redirect(request.ReturnUrl ?? "/");
+        return LocalRedirect(request.ReturnUrl ?? "/");
     }
 
     /// <summary>
@@ -108,16 +108,14 @@ public class ContactFormController : Controller
         var folderId = GetSubmissionsFolderId();
         if (folderId == null)
         {
-            _logger.LogWarning("Contact submissions folder not found. Has ContactFormSeeder run?");
-            return;
+            throw new InvalidOperationException("Contact submissions folder not found. Has ContactFormSeeder run?");
         }
 
         var name = $"{request.Name} - {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}";
         var content = _contentService.Create(name, folderId.Value, ContactFormSeeder.SubmissionDocTypeAlias);
         if (content == null)
         {
-            _logger.LogError("Failed to create submission content node for '{Name}'", name);
-            return;
+            throw new InvalidOperationException($"Failed to create submission content node for '{name}'");
         }
 
         content.SetValue("senderName", request.Name);
