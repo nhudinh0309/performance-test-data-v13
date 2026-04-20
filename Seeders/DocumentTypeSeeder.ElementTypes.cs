@@ -53,7 +53,7 @@ public partial class DocumentTypeSeeder
                     var alias = $"{prefix}NestedBlock_Depth{level}_{i}";
                     var name = $"Nested Block Depth {level} - {i}";
 
-                    var containerElement = new ContentType(_shortStringHelper, -1)
+                    var containerElement = new ContentType(_shortStringHelper, _nestedBlocksFolderId)
                     {
                         Alias = alias,
                         Name = name,
@@ -139,6 +139,7 @@ public partial class DocumentTypeSeeder
             var dataType = new DataType(editor, _serializer)
             {
                 Name = name,
+                ParentId = _blockListFolderId,
                 DatabaseType = ValueStorageType.Ntext
             };
 
@@ -227,7 +228,7 @@ public partial class DocumentTypeSeeder
 
     private IContentType CreateElementType(string alias, string name, string complexity)
     {
-        var elementType = new ContentType(_shortStringHelper, -1)
+        var elementType = new ContentType(_shortStringHelper, _elementTypesFolderId)
         {
             Alias = alias,
             Name = name,

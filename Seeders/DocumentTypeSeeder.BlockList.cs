@@ -33,6 +33,7 @@ public partial class DocumentTypeSeeder
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _blockListFolderId,
                     DatabaseType = ValueStorageType.Ntext
                 };
 

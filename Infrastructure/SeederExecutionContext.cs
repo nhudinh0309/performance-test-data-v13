@@ -43,6 +43,7 @@ public class SeederExecutionContext
     private readonly List<IContentType> _simpleDocTypes = new();
     private readonly List<IContentType> _mediumDocTypes = new();
     private readonly List<IContentType> _complexDocTypes = new();
+    private readonly List<IContentType> _detailDocTypes = new();
     private readonly List<IDataType> _blockListDataTypes = new();
     private readonly List<IDataType> _blockGridDataTypes = new();
     private readonly List<IMedia> _mediaItems = new();
@@ -72,6 +73,11 @@ public class SeederExecutionContext
     /// Complex document types created by DocumentTypeSeeder.
     /// </summary>
     public IReadOnlyList<IContentType> ComplexDocTypes => _complexDocTypes;
+
+    /// <summary>
+    /// Detail document types created by DocumentTypeSeeder (leaf nodes).
+    /// </summary>
+    public IReadOnlyList<IContentType> DetailDocTypes => _detailDocTypes;
 
     /// <summary>
     /// Block List data types created by DocumentTypeSeeder.
@@ -125,6 +131,9 @@ public class SeederExecutionContext
 
     /// <summary>Adds complex document types to the cache.</summary>
     public void AddComplexDocTypes(IEnumerable<IContentType> docTypes) => _complexDocTypes.AddRange(docTypes);
+
+    /// <summary>Adds a detail document type to the cache.</summary>
+    public void AddDetailDocType(IContentType docType) => _detailDocTypes.Add(docType);
 
     /// <summary>Adds block list data types to the cache.</summary>
     public void AddBlockListDataTypes(IEnumerable<IDataType> dataTypes) => _blockListDataTypes.AddRange(dataTypes);
@@ -208,6 +217,20 @@ public class SeederExecutionContext
     /// Cache of content types by ID for quick lookups.
     /// </summary>
     public Dictionary<int, IContentType> ContentTypeCache { get; } = new();
+
+    // === Folder IDs (set by DocumentTypeSeeder, consumed by DataTypeSeeder) ===
+
+    /// <summary>Parent folder ID for test data types.</summary>
+    public int TestDataTypesFolderId { get; set; } = -1;
+
+    /// <summary>Folder ID for Block List data types.</summary>
+    public int BlockListFolderId { get; set; } = -1;
+
+    /// <summary>Folder ID for Block Grid data types.</summary>
+    public int BlockGridFolderId { get; set; } = -1;
+
+    /// <summary>Folder ID for test page doc types (Member, Contact Form).</summary>
+    public int TestPagesFolderId { get; set; } = -1;
 
     /// <summary>
     /// Creates a new SeederExecutionContext with optional seed for reproducibility.
