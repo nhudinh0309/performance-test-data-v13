@@ -20,6 +20,9 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
     private readonly IDataTypeService _dataTypeService;
     private readonly PropertyEditorCollection _propertyEditors;
     private readonly IConfigurationEditorJsonSerializer _serializer;
+    private readonly IDataTypeContainerService _dataTypeContainerService;
+
+    private int _testDataTypesFolderId = -1;
 
     /// <summary>
     /// Creates a new DataTypeSeeder instance.
@@ -28,6 +31,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         IDataTypeService dataTypeService,
         PropertyEditorCollection propertyEditors,
         IConfigurationEditorJsonSerializer serializer,
+        IDataTypeContainerService dataTypeContainerService,
         IScopeProvider scopeProvider,
         ILogger<DataTypeSeeder> logger,
         IRuntimeState runtimeState,
@@ -39,6 +43,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         _dataTypeService = dataTypeService;
         _propertyEditors = propertyEditors;
         _serializer = serializer;
+        _dataTypeContainerService = dataTypeContainerService;
     }
 
     /// <inheritdoc />
@@ -77,6 +82,9 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         }
 
         int totalCreated = 0;
+
+        // Create data type folders: Test Data Types → Block List / Block Grid
+        await CreateDataTypeFoldersAsync();
 
         // Use a single scope for all data type creation (usually small numbers)
         using (var scope = CreateScopedBatch())
@@ -130,6 +138,36 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
         Logger.LogDebug("Cached {Count} data types for other seeders", allDataTypes.Count);
     }
 
+    private async Task CreateDataTypeFoldersAsync()
+    {
+        var userKey = Constants.Security.SuperUserKey;
+
+        // Root folder
+        var rootResult = await _dataTypeContainerService.CreateAsync(null, "Test Data Types", null, userKey);
+        if (rootResult.Success && rootResult.Result is not null)
+        {
+            _testDataTypesFolderId = rootResult.Result.Id;
+            Context.TestDataTypesFolderId = _testDataTypesFolderId;
+
+            // Child folders under "Test Data Types"
+            var parentKey = rootResult.Result.Key;
+
+            var blResult = await _dataTypeContainerService.CreateAsync(parentKey, "Block List", null, userKey);
+            if (blResult.Success && blResult.Result is not null)
+                Context.BlockListFolderId = blResult.Result.Id;
+
+            var bgResult = await _dataTypeContainerService.CreateAsync(parentKey, "Block Grid", null, userKey);
+            if (bgResult.Success && bgResult.Result is not null)
+                Context.BlockGridFolderId = bgResult.Result.Id;
+
+            Logger.LogInformation("Created data type folders: Test Data Types → Block List, Block Grid");
+        }
+        else
+        {
+            Logger.LogWarning("Failed to create Test Data Types folder: {Status}", rootResult.Status);
+        }
+    }
+
     /// <summary>
     /// Converts a configuration object to ConfigurationData dictionary using the editor's configuration editor.
     /// </summary>
@@ -161,6 +199,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Nvarchar,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -202,6 +241,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Ntext,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -255,6 +295,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Ntext,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -296,6 +337,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Ntext,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -337,6 +379,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Ntext,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -378,6 +421,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Nvarchar,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };
@@ -433,6 +477,7 @@ public class DataTypeSeeder : BaseSeeder<DataTypeSeeder>
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _testDataTypesFolderId,
                     DatabaseType = ValueStorageType.Integer,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };

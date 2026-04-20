@@ -221,6 +221,28 @@ public class SeederExecutionContext
     /// </summary>
     public Dictionary<int, IContentType> ContentTypeCache { get; } = new();
 
+    // === Folder IDs (set by DocumentTypeSeeder, consumed by other seeders) ===
+
+    /// <summary>
+    /// Parent folder ID for test data types in the backoffice.
+    /// </summary>
+    public int TestDataTypesFolderId { get; set; } = -1;
+
+    /// <summary>
+    /// Folder ID for Block List data types in the backoffice.
+    /// </summary>
+    public int BlockListFolderId { get; set; } = -1;
+
+    /// <summary>
+    /// Folder ID for Block Grid data types in the backoffice.
+    /// </summary>
+    public int BlockGridFolderId { get; set; } = -1;
+
+    /// <summary>
+    /// Folder ID for test page doc types (Member, Contact Form) in the backoffice.
+    /// </summary>
+    public int TestPagesFolderId { get; set; } = -1;
+
     /// <summary>
     /// Creates a new SeederExecutionContext with optional seed for reproducibility.
     /// </summary>

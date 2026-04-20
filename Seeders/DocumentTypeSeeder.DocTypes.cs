@@ -26,7 +26,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Variant Simple {i}";
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null, _variantDocTypesFolderId);
                 Context.AddSimpleDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -47,7 +47,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Variant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null, _variantDocTypesFolderId);
                 Context.AddMediumDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -69,7 +69,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Variant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid, _variantDocTypesFolderId);
                 Context.AddComplexDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -102,7 +102,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Invariant Simple {i}";
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null, _invariantDocTypesFolderId);
                 Context.AddSimpleDocType(docType);
                 created++;
             }
@@ -122,7 +122,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Invariant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null, _invariantDocTypesFolderId);
                 Context.AddMediumDocType(docType);
                 created++;
             }
@@ -143,7 +143,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Invariant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
+                var docType = await CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid, _invariantDocTypesFolderId);
                 Context.AddComplexDocType(docType);
                 created++;
             }
@@ -167,13 +167,14 @@ public partial class DocumentTypeSeeder
         string complexity,
         bool isVariant,
         IDataType? blockListDataType,
-        IDataType? blockGridDataType)
+        IDataType? blockGridDataType,
+        int parentId = -1)
     {
         // Create Template first
         var template = await CreateTemplate(alias, name, complexity);
 
         // Create Document Type
-        var docType = new ContentType(_shortStringHelper, -1)
+        var docType = new ContentType(_shortStringHelper, parentId)
         {
             Alias = alias,
             Name = name,
@@ -636,7 +637,7 @@ public partial class DocumentTypeSeeder
 
                 var template = await CreateTemplate(alias, name, complexityLower);
 
-                var docType = new ContentType(_shortStringHelper, -1)
+                var docType = new ContentType(_shortStringHelper, _detailDocTypesFolderId)
                 {
                     Alias = alias,
                     Name = name,
