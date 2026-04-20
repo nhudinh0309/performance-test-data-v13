@@ -25,7 +25,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Variant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", true, null, null, _variantDocTypesFolderId);
                 Context.AddSimpleDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -46,7 +46,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Variant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", true, blockList, null, _variantDocTypesFolderId);
                 Context.AddMediumDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -68,7 +68,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Variant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", true, blockList, blockGrid, _variantDocTypesFolderId);
                 Context.AddComplexDocType(docType);
                 created++;
                 LogProgress(created, config.Total, "variant document types");
@@ -101,7 +101,7 @@ public partial class DocumentTypeSeeder
             {
                 var alias = $"{prefix}Simple{i}";
                 var name = $"Test Invariant Simple {i}";
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "simple", false, null, null, _invariantDocTypesFolderId);
                 Context.AddSimpleDocType(docType);
                 created++;
             }
@@ -121,7 +121,7 @@ public partial class DocumentTypeSeeder
                 var alias = $"{prefix}Medium{i}";
                 var name = $"Test Invariant Medium {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "medium", false, blockList, null, _invariantDocTypesFolderId);
                 Context.AddMediumDocType(docType);
                 created++;
             }
@@ -142,7 +142,7 @@ public partial class DocumentTypeSeeder
                 var name = $"Test Invariant Complex {i}";
                 var blockList = blockListDataTypes.Count > 0 ? blockListDataTypes[i % blockListDataTypes.Count] : null;
                 var blockGrid = blockGridDataTypes.Count > 0 ? blockGridDataTypes[i % blockGridDataTypes.Count] : null;
-                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid);
+                var docType = CreateDocumentTypeWithTemplate(alias, name, "complex", false, blockList, blockGrid, _invariantDocTypesFolderId);
                 Context.AddComplexDocType(docType);
                 created++;
             }
@@ -158,6 +158,92 @@ public partial class DocumentTypeSeeder
 
     #endregion
 
+    #region Detail Document Types
+
+    private void CreateDetailDocTypes(List<IDataType> blockListDataTypes, List<IDataType> blockGridDataTypes,
+        CancellationToken cancellationToken)
+    {
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
+        var complexities = new[] { "Simple", "Medium", "Complex" };
+
+        foreach (var isVariant in new[] { true, false })
+        {
+            var variantLabel = isVariant ? "Variant" : "Invariant";
+
+            foreach (var complexity in complexities)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var alias = $"{detailPrefix}{complexity}{variantLabel}";
+                var name = $"Test {variantLabel} Detail {complexity}";
+                var complexityLower = complexity.ToLowerInvariant();
+
+                var template = CreateTemplate(alias, name, complexityLower);
+
+                var docType = new ContentType(_shortStringHelper, _detailDocTypesFolderId)
+                {
+                    Alias = alias,
+                    Name = name,
+                    Icon = "icon-document-dashed-line",
+                    AllowedAsRoot = false,
+                    Variations = isVariant ? ContentVariation.Culture : ContentVariation.Nothing
+                };
+
+                switch (complexityLower)
+                {
+                    case "simple":
+                        AddSimpleDocTypeProperties(docType);
+                        break;
+                    case "medium":
+                        var blockList = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        AddMediumDocTypeProperties(docType, blockList);
+                        break;
+                    case "complex":
+                        var bl = blockListDataTypes.Count > 0
+                            ? blockListDataTypes[Context.DetailDocTypes.Count % blockListDataTypes.Count] : null;
+                        var bg = blockGridDataTypes.Count > 0
+                            ? blockGridDataTypes[Context.DetailDocTypes.Count % blockGridDataTypes.Count] : null;
+                        AddComplexDocTypeProperties(docType, bl, bg);
+                        break;
+                }
+
+                docType.AllowedTemplates = new[] { template };
+                docType.SetDefaultTemplate(template);
+
+                _contentTypeService.Save(docType);
+                Context.AddDetailDocType(docType);
+            }
+        }
+
+        Logger.LogInformation("Created {Count} detail document types", Context.DetailDocTypes.Count);
+    }
+
+    private void ConfigureDocTypeCollectionAndAllowedChildren(CancellationToken cancellationToken)
+    {
+        var allPageDocTypes = Context.SimpleDocTypes
+            .Concat(Context.MediumDocTypes)
+            .Concat(Context.ComplexDocTypes)
+            .ToList();
+
+        var allowedChildren = allPageDocTypes
+            .Concat(Context.DetailDocTypes)
+            .Select((ct, i) => new ContentTypeSort(ct.Id, i) { Alias = ct.Alias })
+            .ToList();
+
+        foreach (var docType in allPageDocTypes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            docType.IsContainer = true;
+            docType.AllowedContentTypes = allowedChildren;
+            _contentTypeService.Save(docType);
+        }
+
+        Logger.LogInformation("Configured Collection + AllowedContentTypes on {Count} document types", allPageDocTypes.Count);
+    }
+
+    #endregion
+
     #region Document Type and Template Creation
 
     private IContentType CreateDocumentTypeWithTemplate(
@@ -166,13 +252,14 @@ public partial class DocumentTypeSeeder
         string complexity,
         bool isVariant,
         IDataType? blockListDataType,
-        IDataType? blockGridDataType)
+        IDataType? blockGridDataType,
+        int parentId = -1)
     {
         // Create Template first
         var template = CreateTemplate(alias, name, complexity);
 
         // Create Document Type
-        var docType = new ContentType(_shortStringHelper, -1)
+        var docType = new ContentType(_shortStringHelper, parentId)
         {
             Alias = alias,
             Name = name,

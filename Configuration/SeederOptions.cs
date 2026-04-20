@@ -13,6 +13,8 @@ public enum PrefixType
     VariantDocType,
     /// <summary>Invariant document type prefix.</summary>
     InvariantDocType,
+    /// <summary>Detail (leaf) document type prefix.</summary>
+    DetailDocType,
     /// <summary>Media item prefix.</summary>
     Media,
     /// <summary>Content node prefix.</summary>
@@ -20,7 +22,9 @@ public enum PrefixType
     /// <summary>User prefix.</summary>
     User,
     /// <summary>Dictionary item prefix.</summary>
-    Dictionary
+    Dictionary,
+    /// <summary>Member prefix.</summary>
+    Member
 }
 
 /// <summary>
@@ -240,6 +244,16 @@ public class SeederEnableFlags
     /// Enable UserSeeder. Default: true
     /// </summary>
     public bool Users { get; set; } = true;
+
+    /// <summary>
+    /// Enable MemberSeeder. Default: true
+    /// </summary>
+    public bool Members { get; set; } = true;
+
+    /// <summary>
+    /// Enable ContactFormSeeder. Default: true
+    /// </summary>
+    public bool ContactForm { get; set; } = true;
 }
 
 /// <summary>
@@ -286,4 +300,14 @@ public class SeederPrefixes
     /// Prefix for dictionary item keys. Default: "Dict_"
     /// </summary>
     public string Dictionary { get; set; } = "Dict_";
+
+    /// <summary>
+    /// Prefix for detail (leaf) document type aliases. Default: "testDetail"
+    /// </summary>
+    public string DetailDocType { get; set; } = "testDetail";
+
+    /// <summary>
+    /// Prefix for test member usernames. Default: "TestMember_"
+    /// </summary>
+    public string Member { get; set; } = "TestMember_";
 }

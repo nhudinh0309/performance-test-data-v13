@@ -1,22 +1,32 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Web.Common.Controllers;
+using Umbraco.Community.PerformanceTestDataSeeder.Configuration;
 
 /// <summary>
-/// API controller for checking seeder status.
+/// API controller for checking seeder status and member test configuration.
 /// GET /umbraco/api/seederstatus/status
+/// GET /umbraco/api/seederstatus/members
 /// </summary>
 public class SeederStatusController : UmbracoApiController
 {
     private readonly SeederStatusService _statusService;
+    private readonly SeederConfiguration _config;
+    private readonly SeederOptions _options;
 
     /// <summary>
     /// Creates a new SeederStatusController instance.
     /// </summary>
-    public SeederStatusController(SeederStatusService statusService)
+    public SeederStatusController(
+        SeederStatusService statusService,
+        IOptions<SeederConfiguration> config,
+        IOptions<SeederOptions> options)
     {
         _statusService = statusService;
+        _config = config.Value;
+        _options = options.Value;
     }
 
     /// <summary>
@@ -49,6 +59,29 @@ public class SeederStatusController : UmbracoApiController
             SeederStatus.Failed => StatusCode(503, response), // Service Unavailable
             _ => StatusCode(202, response)
         };
+    }
+
+    /// <summary>
+    /// Returns member test configuration for k6 load testing scripts.
+    /// </summary>
+    [HttpGet("members")]
+    public IActionResult GetMemberConfig()
+    {
+        var memberPrefix = _options.Prefixes.Member;
+        var memberCount = _config.Members.Count;
+        var password = _config.Members.DefaultPassword;
+
+        return Ok(new
+        {
+            MemberPrefix = memberPrefix,
+            MemberCount = memberCount,
+            DefaultPassword = password,
+            EmailDomain = "example.com",
+            LoginUrl = "/umbraco/api/memberauth/login",
+            LogoutUrl = "/umbraco/api/memberauth/logout",
+            MeUrl = "/umbraco/api/memberauth/me",
+            ContactFormUrl = "/umbraco/api/contactform/submit"
+        });
     }
 }
 
