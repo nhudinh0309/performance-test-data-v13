@@ -749,7 +749,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 ["mediaKey"] = media.Key.ToString(),
                 ["mediaTypeAlias"] = media.ContentType.Alias,
                 ["crops"] = Array.Empty<object>(),
-                ["focalPoint"] = null
+                ["focalPoint"] = new { left = 0.5, top = 0.5 }
             }
         };
         return JsonSerializer.Serialize(mediaPickerItems, JsonOptions);
