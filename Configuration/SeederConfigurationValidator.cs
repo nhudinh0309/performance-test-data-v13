@@ -176,6 +176,18 @@ public class SeederConfigurationValidator
         {
             errors.Add($"Content.ComplexPercent cannot exceed 100 (got {config.ComplexPercent})");
         }
+        if (config.DetailSimplePercent > 100)
+        {
+            errors.Add($"Content.DetailSimplePercent cannot exceed 100 (got {config.DetailSimplePercent})");
+        }
+        if (config.DetailMediumPercent > 100)
+        {
+            errors.Add($"Content.DetailMediumPercent cannot exceed 100 (got {config.DetailMediumPercent})");
+        }
+        if (config.DetailComplexPercent > 100)
+        {
+            errors.Add($"Content.DetailComplexPercent cannot exceed 100 (got {config.DetailComplexPercent})");
+        }
     }
 }
 

@@ -108,7 +108,7 @@ public class ContactFormSeeder : BaseSeeder<ContactFormSeeder>
 
     private async Task CreateSubmissionDocType(IDataType textstringDataType, IDataType textareaDataType)
     {
-        var docType = new ContentType(_shortStringHelper, -1)
+        var docType = new ContentType(_shortStringHelper, Context.TestPagesFolderId)
         {
             Alias = SubmissionDocTypeAlias,
             Name = "Contact Submission",
@@ -246,7 +246,7 @@ public class ContactFormSeeder : BaseSeeder<ContactFormSeeder>
         var templateResult = await _templateService.CreateAsync(template, Constants.Security.SuperUserKey);
         var createdTemplate = templateResult.Success ? templateResult.Result : template;
 
-        var docType = new ContentType(_shortStringHelper, -1)
+        var docType = new ContentType(_shortStringHelper, Context.TestPagesFolderId)
         {
             Alias = FormDocTypeAlias,
             Name = "Contact Form",

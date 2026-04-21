@@ -35,6 +35,7 @@ public partial class DocumentTypeSeeder
                 var dataType = new DataType(editor, _serializer)
                 {
                     Name = name,
+                    ParentId = _blockGridFolderId,
                     DatabaseType = ValueStorageType.Ntext,
                     EditorUiAlias = SeederConstants.GetEditorUiAlias(editor.Alias)
                 };

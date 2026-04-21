@@ -30,6 +30,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     private readonly PropertyEditorCollection _propertyEditors;
     private readonly IConfigurationEditorJsonSerializer _serializer;
     private readonly IShortStringHelper _shortStringHelper;
+    private readonly IContentTypeContainerService _contentTypeContainerService;
 
     // Cached element types categorized by complexity (for Block List/Grid creation)
     private List<IContentType>? _cachedSimpleElements;
@@ -38,6 +39,17 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
 
     // Nested container elements by level (level 1 = top, higher = deeper)
     private Dictionary<int, List<IContentType>> _nestedContainersByLevel = new();
+
+    // Folder IDs for organizing doc types and data types in the backoffice
+    private int _elementTypesFolderId = -1;
+    private int _nestedBlocksFolderId = -1;
+    private int _variantDocTypesFolderId = -1;
+    private int _invariantDocTypesFolderId = -1;
+    private int _detailDocTypesFolderId = -1;
+    private int _testDataTypesFolderId = -1;
+    private int _blockGridFolderId = -1;
+    private int _blockListFolderId = -1;
+    private int _testPagesFolderId = -1;
 
     /// <summary>
     /// Creates a new DocumentTypeSeeder instance.
@@ -49,6 +61,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         PropertyEditorCollection propertyEditors,
         IConfigurationEditorJsonSerializer serializer,
         IShortStringHelper shortStringHelper,
+        IContentTypeContainerService contentTypeContainerService,
         IScopeProvider scopeProvider,
         ILogger<DocumentTypeSeeder> logger,
         IRuntimeState runtimeState,
@@ -63,6 +76,7 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         _propertyEditors = propertyEditors;
         _serializer = serializer;
         _shortStringHelper = shortStringHelper;
+        _contentTypeContainerService = contentTypeContainerService;
     }
 
     /// <inheritdoc />
@@ -112,6 +126,9 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
 
         // Ensure built-in data types are loaded
         await EnsureBuiltInDataTypesLoadedAsync();
+
+        // Create folders for organizing items in the backoffice
+        await CreateFoldersAsync();
 
         List<IDataType> blockListDataTypes;
         List<IDataType> blockGridDataTypes;
@@ -197,6 +214,46 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             blockGridDataTypes.Count,
             docTypeConfig.TotalDocTypes);
     }
+
+    #region Folder Creation
+
+    private async Task CreateFoldersAsync()
+    {
+        var userKey = Constants.Security.SuperUserKey;
+
+        // Document type folders
+        _elementTypesFolderId = await CreateDocTypeFolderAsync("Element Types", null, userKey);
+        _nestedBlocksFolderId = await CreateDocTypeFolderAsync("Nested Blocks", null, userKey);
+        _variantDocTypesFolderId = await CreateDocTypeFolderAsync("Variant Document Types", null, userKey);
+        _invariantDocTypesFolderId = await CreateDocTypeFolderAsync("Invariant Document Types", null, userKey);
+        _detailDocTypesFolderId = await CreateDocTypeFolderAsync("Detail Document Types", null, userKey);
+        _testPagesFolderId = await CreateDocTypeFolderAsync("Test Pages", null, userKey);
+
+        // Data type folder IDs — created by DataTypeSeeder, read from context
+        _testDataTypesFolderId = Context.TestDataTypesFolderId;
+        _blockListFolderId = Context.BlockListFolderId;
+        _blockGridFolderId = Context.BlockGridFolderId;
+
+        // Store folder IDs in context so other seeders can use them
+        Context.TestPagesFolderId = _testPagesFolderId;
+
+        Logger.LogInformation("Created folders for organizing document types and data types");
+    }
+
+    private async Task<int> CreateDocTypeFolderAsync(string name, Guid? parentKey, Guid userKey)
+    {
+        var result = await _contentTypeContainerService.CreateAsync(parentKey, name, null, userKey);
+        if (result.Success && result.Result is not null)
+        {
+            return result.Result.Id;
+        }
+
+        Logger.LogWarning("Failed to create document type folder '{Name}': {Status}", name, result.Status);
+        return -1;
+    }
+
+
+    #endregion
 
     #region Data Type Helpers
 

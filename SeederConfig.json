@@ -59,7 +59,8 @@
         "FolderCount": 10
       },
       "Video": {
-        "Count": 10
+        "Count": 10,
+        "FolderCount": 1
       }
     },
     "Content": {

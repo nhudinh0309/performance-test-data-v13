@@ -47,6 +47,7 @@ public class MemberAuthController : ControllerBase
             var member = await _memberManager.FindByNameAsync(request.Username);
             if (member == null)
             {
+                await _memberSignInManager.SignOutAsync();
                 return Ok(new MemberAuthResponse { Success = false, Error = "Member not found after sign-in" });
             }
 

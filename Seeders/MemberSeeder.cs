@@ -401,7 +401,7 @@ public class MemberSeeder : BaseSeeder<MemberSeeder>
 
     private async Task<IContentType> CreateDocType(string alias, string name, string icon, ITemplate template)
     {
-        var docType = new ContentType(_shortStringHelper, -1)
+        var docType = new ContentType(_shortStringHelper, Context.TestPagesFolderId)
         {
             Alias = alias,
             Name = name,
