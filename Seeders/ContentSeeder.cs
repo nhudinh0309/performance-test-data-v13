@@ -141,8 +141,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
-        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}",
-            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count);
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
+        Context.AddDetailDocTypes(allTypes.Where(t =>
+            t.Alias.StartsWith(detailPrefix, StringComparison.OrdinalIgnoreCase)));
+
+        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Detail: {Detail}",
+            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
+            Context.DetailDocTypes.Count);
     }
 
     private void LoadLanguagesIfNeeded()

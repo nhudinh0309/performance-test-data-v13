@@ -162,9 +162,9 @@ public class SeederOptions
     /// <summary>
     /// Content publishing mode.
     /// None = save all as draft, All = publish everything, FirstSection = publish only first root section.
-    /// Default: All
+    /// Default: FirstSection
     /// </summary>
-    public PublishMode PublishMode { get; set; } = PublishMode.All;
+    public PublishMode PublishMode { get; set; } = PublishMode.FirstSection;
 
     /// <summary>
     /// Number of content items to publish in each batch when publishing is enabled.

@@ -135,6 +135,9 @@ public class SeederExecutionContext
     /// <summary>Adds a detail document type to the cache.</summary>
     public void AddDetailDocType(IContentType docType) => _detailDocTypes.Add(docType);
 
+    /// <summary>Adds detail document types to the cache.</summary>
+    public void AddDetailDocTypes(IEnumerable<IContentType> docTypes) => _detailDocTypes.AddRange(docTypes);
+
     /// <summary>Adds block list data types to the cache.</summary>
     public void AddBlockListDataTypes(IEnumerable<IDataType> dataTypes) => _blockListDataTypes.AddRange(dataTypes);
 
