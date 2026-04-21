@@ -271,12 +271,25 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var detailDocType = GetRandomDocType("simple");
+                                    // Detail pages use a configurable distribution to provide
+                                    // realistic variety for load testing while limiting costly complex pages
+                                    var detailRoll = Context.Random.Next(100);
+                                    var detailComplexity = detailRoll < contentConfig.DetailSimplePercent
+                                        ? "simple"
+                                        : detailRoll < contentConfig.DetailSimplePercent + contentConfig.DetailMediumPercent
+                                            ? "medium"
+                                            : "complex";
+                                    var detailDocType = GetRandomDetailDocType(detailComplexity);
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple");
+                                        pageParentId, detailDocType, detailComplexity);
                                     if (detailContent != null) Context.AddContent(detailContent);
-                                    simpleCreated++;
+                                    switch (detailComplexity)
+                                    {
+                                        case "simple": simpleCreated++; break;
+                                        case "medium": mediumCreated++; break;
+                                        case "complex": complexCreated++; break;
+                                    }
                                     totalCreated++;
                                     batchCount++;
 
@@ -454,6 +467,22 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         {
             return ("complex", GetRandomDocType("complex"));
         }
+    }
+
+    private IContentType GetRandomDetailDocType(string complexity)
+    {
+        if (Context.DetailDocTypes.Count == 0)
+            return GetRandomDocType(complexity);
+
+        var complexityLabel = char.ToUpper(complexity[0]) + complexity[1..];
+        var matching = Context.DetailDocTypes
+            .Where(d => d.Alias.Contains(complexityLabel, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matching.Count > 0)
+            return matching[Context.Random.Next(matching.Count)];
+
+        return Context.DetailDocTypes[Context.Random.Next(Context.DetailDocTypes.Count)];
     }
 
     private IContentType GetRandomDocType(string complexity)
