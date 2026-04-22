@@ -48,6 +48,21 @@ public class SeederConfigurationValidator
         // Validate Media
         ValidateMediaConfig(config.Media, errors);
 
+        // Validate Members
+        ValidateNonNegative(config.Members.Count, "Members.Count", errors);
+        if (string.IsNullOrWhiteSpace(config.Members.DefaultPassword))
+        {
+            errors.Add("Members.DefaultPassword must not be empty");
+        }
+        ValidateNonNegative(config.Members.StandardPercent, "Members.StandardPercent", errors);
+        ValidateNonNegative(config.Members.PremiumPercent, "Members.PremiumPercent", errors);
+        ValidateNonNegative(config.Members.VIPPercent, "Members.VIPPercent", errors);
+        var memberPercentSum = config.Members.StandardPercent + config.Members.PremiumPercent + config.Members.VIPPercent;
+        if (memberPercentSum != 100)
+        {
+            errors.Add($"Members group percentages must sum to 100 (StandardPercent + PremiumPercent + VIPPercent = {memberPercentSum})");
+        }
+
         // Validate Content
         ValidateContentConfig(config.Content, errors);
 
@@ -128,6 +143,9 @@ public class SeederConfigurationValidator
         ValidateNonNegative(config.SimplePercent, "Content.SimplePercent", errors);
         ValidateNonNegative(config.MediumPercent, "Content.MediumPercent", errors);
         ValidateNonNegative(config.ComplexPercent, "Content.ComplexPercent", errors);
+        ValidateNonNegative(config.DetailSimplePercent, "Content.DetailSimplePercent", errors);
+        ValidateNonNegative(config.DetailMediumPercent, "Content.DetailMediumPercent", errors);
+        ValidateNonNegative(config.DetailComplexPercent, "Content.DetailComplexPercent", errors);
         ValidateNonNegative(config.RootSections, "Content.RootSections", errors);
         ValidateNonNegative(config.CategoriesPerSection, "Content.CategoriesPerSection", errors);
         ValidateNonNegative(config.PagesPerCategory, "Content.PagesPerCategory", errors);
@@ -137,6 +155,12 @@ public class SeederConfigurationValidator
         if (percentSum != 100)
         {
             errors.Add($"Content percentages must sum to 100 (SimplePercent + MediumPercent + ComplexPercent = {percentSum})");
+        }
+
+        var detailPercentSum = config.DetailSimplePercent + config.DetailMediumPercent + config.DetailComplexPercent;
+        if (detailPercentSum != 100)
+        {
+            errors.Add($"Detail page percentages must sum to 100 (DetailSimplePercent + DetailMediumPercent + DetailComplexPercent = {detailPercentSum})");
         }
 
         // Validate individual percentages are valid
@@ -151,6 +175,18 @@ public class SeederConfigurationValidator
         if (config.ComplexPercent > 100)
         {
             errors.Add($"Content.ComplexPercent cannot exceed 100 (got {config.ComplexPercent})");
+        }
+        if (config.DetailSimplePercent > 100)
+        {
+            errors.Add($"Content.DetailSimplePercent cannot exceed 100 (got {config.DetailSimplePercent})");
+        }
+        if (config.DetailMediumPercent > 100)
+        {
+            errors.Add($"Content.DetailMediumPercent cannot exceed 100 (got {config.DetailMediumPercent})");
+        }
+        if (config.DetailComplexPercent > 100)
+        {
+            errors.Add($"Content.DetailComplexPercent cannot exceed 100 (got {config.DetailComplexPercent})");
         }
     }
 }

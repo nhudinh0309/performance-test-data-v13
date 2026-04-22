@@ -39,6 +39,17 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
     // Nested container elements by level (level 1 = top, higher = deeper)
     private Dictionary<int, List<IContentType>> _nestedContainersByLevel = new();
 
+    // Folder IDs for organizing doc types and data types in the backoffice
+    private int _elementTypesFolderId = -1;
+    private int _nestedBlocksFolderId = -1;
+    private int _variantDocTypesFolderId = -1;
+    private int _invariantDocTypesFolderId = -1;
+    private int _detailDocTypesFolderId = -1;
+    private int _testDataTypesFolderId = -1;
+    private int _blockGridFolderId = -1;
+    private int _blockListFolderId = -1;
+    private int _testPagesFolderId = -1;
+
     /// <summary>
     /// Creates a new DocumentTypeSeeder instance.
     /// </summary>
@@ -113,6 +124,9 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
         // Ensure built-in data types are loaded
         EnsureBuiltInDataTypesLoaded();
 
+        // Create folders for organizing items in the backoffice
+        CreateFolders();
+
         List<IDataType> blockListDataTypes;
         List<IDataType> blockGridDataTypes;
 
@@ -170,6 +184,22 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
             scope.Complete();
         }
 
+        // Phase 7: Create Detail Document Types (leaf nodes, no collection)
+        Logger.LogInformation("Phase 7: Creating Detail Document Types...");
+        using (var scope = CreateScopedBatch())
+        {
+            CreateDetailDocTypes(blockListDataTypes, blockGridDataTypes, cancellationToken);
+            scope.Complete();
+        }
+
+        // Phase 8: Configure Collection + AllowedContentTypes on page doc types
+        Logger.LogInformation("Phase 8: Configuring Collection and allowed child nodes...");
+        using (var scope = CreateScopedBatch())
+        {
+            ConfigureDocTypeCollectionAndAllowedChildren(cancellationToken);
+            scope.Complete();
+        }
+
         // Store block data types in context for ContentSeeder
         Context.AddBlockListDataTypes(blockListDataTypes);
         Context.AddBlockGridDataTypes(blockGridDataTypes);
@@ -183,6 +213,43 @@ public partial class DocumentTypeSeeder : BaseSeeder<DocumentTypeSeeder>
 
         return Task.CompletedTask;
     }
+
+    #region Folder Creation
+
+    private void CreateFolders()
+    {
+        const int userId = -1; // super user
+
+        // Document type folders
+        _elementTypesFolderId = CreateDocTypeFolder(-1, "Element Types", userId);
+        _nestedBlocksFolderId = CreateDocTypeFolder(-1, "Nested Blocks", userId);
+        _variantDocTypesFolderId = CreateDocTypeFolder(-1, "Variant Document Types", userId);
+        _invariantDocTypesFolderId = CreateDocTypeFolder(-1, "Invariant Document Types", userId);
+        _detailDocTypesFolderId = CreateDocTypeFolder(-1, "Detail Document Types", userId);
+        _testPagesFolderId = CreateDocTypeFolder(-1, "Test Pages", userId);
+
+        // Data type folder IDs — created by DataTypeSeeder, read from context
+        _testDataTypesFolderId = Context.TestDataTypesFolderId;
+        _blockListFolderId = Context.BlockListFolderId;
+        _blockGridFolderId = Context.BlockGridFolderId;
+
+        // Store folder IDs in context so other seeders can use them
+        Context.TestPagesFolderId = _testPagesFolderId;
+
+        Logger.LogInformation("Created folders for organizing document types and data types");
+    }
+
+    private int CreateDocTypeFolder(int parentId, string name, int userId)
+    {
+        var result = _contentTypeService.CreateContainer(parentId, Guid.NewGuid(), name, userId);
+        if (result.Success && result.Result?.Entity is not null)
+            return result.Result.Entity.Id;
+
+        Logger.LogWarning("Failed to create document type folder '{Name}'", name);
+        return -1;
+    }
+
+    #endregion
 
     #region Data Type Helpers
 

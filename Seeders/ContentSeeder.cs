@@ -141,8 +141,13 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             t.Alias.StartsWith($"{variantPrefix}Complex", StringComparison.OrdinalIgnoreCase) ||
             t.Alias.StartsWith($"{invariantPrefix}Complex", StringComparison.OrdinalIgnoreCase)));
 
-        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}",
-            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count);
+        var detailPrefix = GetPrefix(PrefixType.DetailDocType);
+        Context.AddDetailDocTypes(allTypes.Where(t =>
+            t.Alias.StartsWith(detailPrefix, StringComparison.OrdinalIgnoreCase)));
+
+        Logger.LogDebug("Loaded doc types - Simple: {Simple}, Medium: {Medium}, Complex: {Complex}, Detail: {Detail}",
+            Context.SimpleDocTypes.Count, Context.MediumDocTypes.Count, Context.ComplexDocTypes.Count,
+            Context.DetailDocTypes.Count);
     }
 
     private void LoadLanguagesIfNeeded()
@@ -266,12 +271,25 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                                 {
                                     cancellationToken.ThrowIfCancellationRequested();
 
-                                    var detailDocType = GetRandomDocType("simple");
+                                    // Detail pages use a configurable distribution to provide
+                                    // realistic variety for load testing while limiting costly complex pages
+                                    var detailRoll = Context.Random.Next(100);
+                                    var detailComplexity = detailRoll < contentConfig.DetailSimplePercent
+                                        ? "simple"
+                                        : detailRoll < contentConfig.DetailSimplePercent + contentConfig.DetailMediumPercent
+                                            ? "medium"
+                                            : "complex";
+                                    var detailDocType = GetRandomDetailDocType(detailComplexity);
                                     var pageParentId = pageContent?.Id ?? -1;
                                     var detailContent = CreateContent($"Detail_{section}_{cat}_{page}_{detail}",
-                                        pageParentId, detailDocType, "simple");
+                                        pageParentId, detailDocType, detailComplexity);
                                     if (detailContent != null) Context.AddContent(detailContent);
-                                    simpleCreated++;
+                                    switch (detailComplexity)
+                                    {
+                                        case "simple": simpleCreated++; break;
+                                        case "medium": mediumCreated++; break;
+                                        case "complex": complexCreated++; break;
+                                    }
                                     totalCreated++;
                                     batchCount++;
 
@@ -451,6 +469,22 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         }
     }
 
+    private IContentType GetRandomDetailDocType(string complexity)
+    {
+        if (Context.DetailDocTypes.Count == 0)
+            return GetRandomDocType(complexity);
+
+        var complexityLabel = char.ToUpper(complexity[0]) + complexity[1..];
+        var matching = Context.DetailDocTypes
+            .Where(d => d.Alias.Contains(complexityLabel, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matching.Count > 0)
+            return matching[Context.Random.Next(matching.Count)];
+
+        return Context.DetailDocTypes[Context.Random.Next(Context.DetailDocTypes.Count)];
+    }
+
     private IContentType GetRandomDocType(string complexity)
     {
         // Use shared Random from context for reproducibility
@@ -597,7 +631,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             if (existingDomains.Any(d => d.LanguageIsoCode == language.IsoCode))
                 continue;
 
-            var domainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}";
+            var domainName = $"{domainSuffix}/test-{content.Id}-{language.IsoCode.ToLower()}";
 
             var domain = new UmbracoDomain(domainName)
             {
@@ -632,8 +666,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("description"))
             content.SetValue("description", Context.Faker.Lorem.Paragraph(), GetCulture(content, "description", culture));
-        if (content.HasProperty("isPublished"))
-            content.SetValue("isPublished", Context.Faker.Random.Bool(), GetCulture(content, "isPublished", culture));
+        if (content.HasProperty("isActive"))
+            content.SetValue("isActive", Context.Faker.Random.Bool(), GetCulture(content, "isActive", culture));
     }
 
     private void SetMediumProperties(IContent content, string? culture)
@@ -763,7 +797,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var simpleBlock = FindBlockByComplexity(blockConfig.Blocks, "Simple");
         if (simpleBlock == null) return null;
 
-        var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
+        var elementType = GetCachedContentTypeByKey(simpleBlock.ContentElementTypeKey);
         if (elementType == null) return null;
 
         var contentUdi = Guid.NewGuid().ToString("N");
@@ -794,7 +828,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -810,7 +844,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");
@@ -845,7 +879,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -867,7 +901,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockGridByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");
@@ -1004,7 +1038,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null && currentDepth < maxDepth)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -1021,7 +1055,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");

@@ -13,6 +13,8 @@ public enum PrefixType
     VariantDocType,
     /// <summary>Invariant document type prefix.</summary>
     InvariantDocType,
+    /// <summary>Detail (leaf) document type prefix.</summary>
+    DetailDocType,
     /// <summary>Media item prefix.</summary>
     Media,
     /// <summary>Content node prefix.</summary>
@@ -20,7 +22,9 @@ public enum PrefixType
     /// <summary>User prefix.</summary>
     User,
     /// <summary>Dictionary item prefix.</summary>
-    Dictionary
+    Dictionary,
+    /// <summary>Member prefix.</summary>
+    Member
 }
 
 /// <summary>
@@ -158,9 +162,9 @@ public class SeederOptions
     /// <summary>
     /// Content publishing mode.
     /// None = save all as draft, All = publish everything, FirstSection = publish only first root section.
-    /// Default: All
+    /// Default: FirstSection
     /// </summary>
-    public PublishMode PublishMode { get; set; } = PublishMode.All;
+    public PublishMode PublishMode { get; set; } = PublishMode.FirstSection;
 
     /// <summary>
     /// Number of content items to publish in each batch when publishing is enabled.
@@ -178,9 +182,9 @@ public class SeederOptions
     public bool DryRun { get; set; } = false;
 
     /// <summary>
-    /// Domain suffix for content domains.
-    /// Domains are created as "test-{contentId}-{culture}.{DomainSuffix}".
-    /// Set to your actual domain for production-like testing.
+    /// Domain host for content domains.
+    /// Domains are created as "{DomainSuffix}/test-{contentId}-{culture}".
+    /// Include the port for local development (e.g., "localhost:44340").
     /// Default: "localhost"
     /// </summary>
     public string DomainSuffix { get; set; } = "localhost";
@@ -240,6 +244,16 @@ public class SeederEnableFlags
     /// Enable UserSeeder. Default: true
     /// </summary>
     public bool Users { get; set; } = true;
+
+    /// <summary>
+    /// Enable MemberSeeder. Default: true
+    /// </summary>
+    public bool Members { get; set; } = true;
+
+    /// <summary>
+    /// Enable ContactFormSeeder. Default: true
+    /// </summary>
+    public bool ContactForm { get; set; } = true;
 }
 
 /// <summary>
@@ -286,4 +300,14 @@ public class SeederPrefixes
     /// Prefix for dictionary item keys. Default: "Dict_"
     /// </summary>
     public string Dictionary { get; set; } = "Dict_";
+
+    /// <summary>
+    /// Prefix for detail (leaf) document type aliases. Default: "testDetail"
+    /// </summary>
+    public string DetailDocType { get; set; } = "testDetail";
+
+    /// <summary>
+    /// Prefix for test member usernames. Default: "TestMember_"
+    /// </summary>
+    public string Member { get; set; } = "TestMember_";
 }
