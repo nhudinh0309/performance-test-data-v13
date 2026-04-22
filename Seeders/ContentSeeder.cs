@@ -631,7 +631,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             if (existingDomains.Any(d => d.LanguageIsoCode == language.IsoCode))
                 continue;
 
-            var domainName = $"test-{content.Id}-{language.IsoCode.ToLower()}.{domainSuffix}";
+            var domainName = $"{domainSuffix}/test-{content.Id}-{language.IsoCode.ToLower()}";
 
             var domain = new UmbracoDomain(domainName)
             {
@@ -666,8 +666,8 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             content.SetValue("title", Context.Faker.Lorem.Sentence(3), GetCulture(content, "title", culture));
         if (content.HasProperty("description"))
             content.SetValue("description", Context.Faker.Lorem.Paragraph(), GetCulture(content, "description", culture));
-        if (content.HasProperty("isPublished"))
-            content.SetValue("isPublished", Context.Faker.Random.Bool(), GetCulture(content, "isPublished", culture));
+        if (content.HasProperty("isActive"))
+            content.SetValue("isActive", Context.Faker.Random.Bool(), GetCulture(content, "isActive", culture));
     }
 
     private void SetMediumProperties(IContent content, string? culture)

@@ -1,5 +1,6 @@
 namespace Umbraco.Community.PerformanceTestDataSeeder.Infrastructure;
 
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Umbraco.Cms.Web.Common.Controllers;
@@ -28,6 +29,12 @@ public class SeederStatusController : UmbracoApiController
         _config = config.Value;
         _options = options.Value;
     }
+
+    /// <summary>
+    /// Converts a content name to a URL segment matching Umbraco's default convention.
+    /// </summary>
+    private static string ToUrlSegment(string name) =>
+        Regex.Replace(name.ToLowerInvariant().Replace(" ", "-"), "[^a-z0-9-]", "-").Trim('-');
 
     /// <summary>
     /// Gets the current seeder status.
@@ -62,26 +69,38 @@ public class SeederStatusController : UmbracoApiController
     }
 
     /// <summary>
-    /// Returns member test configuration for k6 load testing scripts.
+    /// Gets member test configuration for use in load testing scripts.
+    /// Returns the prefix, count, and password needed to construct member credentials,
+    /// plus the API and frontend page URLs needed by k6 scripts.
     /// </summary>
     [HttpGet("members")]
     public IActionResult GetMemberConfig()
     {
-        var memberPrefix = _options.Prefixes.Member;
-        var memberCount = _config.Members.Count;
-        var password = _config.Members.DefaultPassword;
+        var prefix = _options.Prefixes.Member;
+        var loginName = $"{prefix}Member Login";
+        var memberAreaName = $"{prefix}Member Area";
 
-        return Ok(new
+        // Derive URLs from content names (Umbraco generates URL segments from names)
+        var loginPageUrl = $"/{ToUrlSegment(loginName)}/";
+        var memberAreaPageUrl = $"/{ToUrlSegment(memberAreaName)}/";
+
+        var response = new MemberTestConfigResponse
         {
-            MemberPrefix = memberPrefix,
-            MemberCount = memberCount,
-            DefaultPassword = password,
+            Prefix = prefix,
+            Count = _config.Members.Count,
+            Password = _config.Members.DefaultPassword,
             EmailDomain = "example.com",
             LoginUrl = "/umbraco/api/memberauth/login",
             LogoutUrl = "/umbraco/api/memberauth/logout",
             MeUrl = "/umbraco/api/memberauth/me",
-            ContactFormUrl = "/umbraco/api/contactform/submit"
-        });
+            ContactFormUrl = "/umbraco/api/contactform/submit",
+            ContactFormStatsUrl = "/umbraco/api/contactform/stats",
+            ContactFormPageUrl = $"/{ToUrlSegment("Contact Us")}/",
+            LoginPageUrl = loginPageUrl,
+            MemberAreaPageUrl = memberAreaPageUrl
+        };
+
+        return Ok(response);
     }
 }
 
@@ -124,4 +143,71 @@ public class SeederStatusResponse
     /// Error message if seeding failed.
     /// </summary>
     public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Response model for member test configuration endpoint.
+/// Provides all information needed for k6/load test scripts to construct member credentials.
+/// </summary>
+public class MemberTestConfigResponse
+{
+    /// <summary>
+    /// Username prefix. Members are named {Prefix}1, {Prefix}2, ..., {Prefix}{Count}.
+    /// </summary>
+    public string Prefix { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Total number of seeded members.
+    /// </summary>
+    public int Count { get; set; }
+
+    /// <summary>
+    /// Password shared by all seeded members.
+    /// </summary>
+    public string Password { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Email domain. Emails follow the pattern {username_lowercase}@{EmailDomain}.
+    /// </summary>
+    public string EmailDomain { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL to POST login credentials to (JSON body: { username, password }).
+    /// </summary>
+    public string LoginUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL to POST to sign out the current member.
+    /// </summary>
+    public string LogoutUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL to GET the current member's auth state.
+    /// </summary>
+    public string MeUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL to POST contact form data to (JSON body: { name, email, subject, message }).
+    /// </summary>
+    public string ContactFormUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL to GET contact form submission stats.
+    /// </summary>
+    public string ContactFormStatsUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Published URL of the member login page (rendered frontend).
+    /// </summary>
+    public string? LoginPageUrl { get; set; }
+
+    /// <summary>
+    /// Published URL of the member area page (rendered frontend).
+    /// </summary>
+    public string? MemberAreaPageUrl { get; set; }
+
+    /// <summary>
+    /// Published URL of the contact form page (rendered frontend).
+    /// </summary>
+    public string? ContactFormPageUrl { get; set; }
 }

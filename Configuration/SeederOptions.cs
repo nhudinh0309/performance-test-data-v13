@@ -182,9 +182,9 @@ public class SeederOptions
     public bool DryRun { get; set; } = false;
 
     /// <summary>
-    /// Domain suffix for content domains.
-    /// Domains are created as "test-{contentId}-{culture}.{DomainSuffix}".
-    /// Set to your actual domain for production-like testing.
+    /// Domain host for content domains.
+    /// Domains are created as "{DomainSuffix}/test-{contentId}-{culture}".
+    /// Include the port for local development (e.g., "localhost:44340").
     /// Default: "localhost"
     /// </summary>
     public string DomainSuffix { get; set; } = "localhost";
