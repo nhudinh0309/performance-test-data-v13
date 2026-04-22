@@ -783,7 +783,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
                 ["mediaKey"] = media.Key.ToString(),
                 ["mediaTypeAlias"] = media.ContentType.Alias,
                 ["crops"] = Array.Empty<object>(),
-                ["focalPoint"] = new { left = 0.5, top = 0.5 }
+                ["focalPoint"] = null
             }
         };
         return JsonSerializer.Serialize(mediaPickerItems, JsonOptions);
@@ -797,7 +797,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var simpleBlock = FindBlockByComplexity(blockConfig.Blocks, "Simple");
         if (simpleBlock == null) return null;
 
-        var elementType = _contentTypeService.Get(simpleBlock.ContentElementTypeKey);
+        var elementType = GetCachedContentTypeByKey(simpleBlock.ContentElementTypeKey);
         if (elementType == null) return null;
 
         var contentUdi = Guid.NewGuid().ToString("N");
@@ -828,7 +828,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -844,7 +844,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");
@@ -879,7 +879,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockGridElement(blockConfig.Blocks);
         if (nestedBlock != null)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -901,7 +901,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockGridByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");
@@ -1038,7 +1038,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
         var nestedBlock = FindNestedBlockElement(blockConfig.Blocks);
         if (nestedBlock != null && currentDepth < maxDepth)
         {
-            var elementType = _contentTypeService.Get(nestedBlock.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(nestedBlock.ContentElementTypeKey);
             if (elementType != null)
             {
                 var contentUdi = Guid.NewGuid().ToString("N");
@@ -1055,7 +1055,7 @@ public class ContentSeeder : BaseSeeder<ContentSeeder>
             var block = FindBlockByComplexity(blockConfig.Blocks, complexity);
             if (block == null) continue;
 
-            var elementType = _contentTypeService.Get(block.ContentElementTypeKey);
+            var elementType = GetCachedContentTypeByKey(block.ContentElementTypeKey);
             if (elementType == null) continue;
 
             var contentUdi = Guid.NewGuid().ToString("N");
